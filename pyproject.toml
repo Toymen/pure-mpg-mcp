@@ -1,0 +1,48 @@
+[project]
+name = "pure-mpg-mcp"
+version = "0.1.0"
+description = "MCP server for the public PuRe (PubMan) REST API — search and retrieve Max Planck Society publications."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "André Brandenburg" }]
+keywords = ["mcp", "model-context-protocol", "pure", "pubman", "max-planck", "publications", "openalex"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "mcp>=1.2.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+pure-mpg-mcp = "pure_mpg_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/"
+Repository = "https://github.com/"
+"PuRe API" = "https://pure.mpg.de/rest/swagger-ui/index.html"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pure_mpg_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = ["network: tests that hit the live public PuRe API"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
