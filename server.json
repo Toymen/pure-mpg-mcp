@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.toymen/pure-mpg-mcp",
+  "description": "Search and analyze Max Planck Society publications via the public PuRe (PubMan) REST API, with optional enrichment from CONE, OpenAlex, Crossref, Unpaywall and Semantic Scholar.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/Toymen/pure-mpg-mcp",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "pure-mpg-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

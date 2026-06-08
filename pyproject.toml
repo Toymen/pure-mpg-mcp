@@ -28,8 +28,9 @@ dev = [
 pure-mpg-mcp = "pure_mpg_mcp.server:main"
 
 [project.urls]
-Homepage = "https://github.com/"
-Repository = "https://github.com/"
+Homepage = "https://github.com/Toymen/pure-mpg-mcp"
+Repository = "https://github.com/Toymen/pure-mpg-mcp"
+Issues = "https://github.com/Toymen/pure-mpg-mcp/issues"
 "PuRe API" = "https://pure.mpg.de/rest/swagger-ui/index.html"
 
 [build-system]

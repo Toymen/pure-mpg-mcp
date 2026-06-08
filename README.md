@@ -1,5 +1,10 @@
 # pure-mpg-mcp
 
+[![CI](https://github.com/Toymen/pure-mpg-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Toymen/pure-mpg-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+<!-- mcp-name: io.github.toymen/pure-mpg-mcp -->
+
 An [MCP](https://modelcontextprotocol.io) server for the **PuRe (PubMan) REST API** — the Max Planck Society's publication repository at [pure.mpg.de](https://pure.mpg.de).
 
 It lets any MCP client (Claude Desktop, Claude Code, etc.) search and retrieve Max Planck publications, organizational units, collections, and feeds.
@@ -78,9 +83,17 @@ Only this opt-in path makes a third-party call (genderize.io). With `include_gen
 Requires Python ≥ 3.10. Using [uv](https://docs.astral.sh/uv/):
 
 ```bash
+# from source (clone first)
+git clone https://github.com/Toymen/pure-mpg-mcp.git
+cd pure-mpg-mcp
 uv pip install -e .
-# or from PyPI once published:
-# uv pip install pure-mpg-mcp
+```
+
+Once published to PyPI it will also be installable directly:
+
+```bash
+uvx pure-mpg-mcp          # run without installing
+# or: uv pip install pure-mpg-mcp
 ```
 
 ## Run
@@ -103,8 +116,9 @@ Add to your MCP config (`claude_desktop_config.json` or `.mcp.json`):
 }
 ```
 
-If you installed into a virtualenv, point `command` at the venv's `pure-mpg-mcp`,
-or use `uvx`:
+If you installed into a virtualenv, point `command` at that venv's
+`pure-mpg-mcp` binary (e.g. `/path/to/.venv/bin/pure-mpg-mcp`). Once the
+package is on PyPI you can instead have the client fetch and run it via `uvx`:
 
 ```json
 {
@@ -138,9 +152,31 @@ then `export_publication(item_id, format="BibTex")`.
 ```bash
 uv pip install -e ".[dev]"
 ruff check .
-pytest -m "not network"   # offline unit tests
-pytest                     # include live API smoke tests
+pytest -m "not network"   # offline unit tests (what CI runs)
+pytest                     # include live API smoke tests (network)
 ```
+
+Tests are split with a `network` marker: offline tests cover all the pure
+aggregation/parsing logic and run in CI; network-marked tests hit the live
+public APIs and are skipped in CI so the suite never depends on third-party
+uptime or rate limits. GitHub Actions runs lint + offline tests on Python 3.10
+and 3.12 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+## Publishing
+
+MCP servers aren't "hosted" on GitHub — GitHub holds the source, and clients
+launch the server locally over stdio. The standard distribution path:
+
+1. **GitHub** — source of truth (this repo).
+2. **PyPI** — so users can `uvx pure-mpg-mcp`. Tag a release and the
+   [`publish`](.github/workflows/publish.yml) workflow builds and uploads via
+   PyPI [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (no
+   stored token). Configure the trusted publisher on PyPI first.
+3. **MCP Registry** (optional) — [`server.json`](server.json) is the manifest;
+   the `<!-- mcp-name: io.github.toymen/pure-mpg-mcp -->` line in this README
+   verifies ownership. Publish with the
+   [`mcp-publisher`](https://modelcontextprotocol.io/registry/quickstart) CLI
+   after the PyPI release exists.
 
 ## API reference
 
