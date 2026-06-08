@@ -280,74 +280,94 @@ async def coauthorship_analysis(
 
 
 @mcp.tool()
-async def infer_publication_gender(
+async def analyze_authors(
     item_id: str | None = None,
     query: dict[str, Any] | None = None,
+    enrich: bool = True,
+    include_gender: bool = False,
     country_id: str | None = "DE",
-    resolve_initials: bool = True,
     probability_threshold: float = 0.6,
     max_records: int = 100,
 ) -> dict[str, Any]:
-    """Estimate the gender distribution of authors for a publication or query.
+    """Extract and enrich the authors of a publication or a set of publications.
 
-    PROBABILISTIC AND BINARY-BY-CONSTRUCTION. Gender is inferred from author
-    first names via genderize.io; it is suitable only for aggregate analysis,
-    never for claims about individuals. Names that are initials, ambiguous, or
-    below `probability_threshold` are reported as "unknown".
+    A general author-analysis tool. Provide `item_id` for one publication, or
+    `query` (Elasticsearch DSL) for an aggregate over up to `max_records`
+    publications. Returns a per-author list plus a summary (distinct authors,
+    distinct institutions, country breakdown).
 
-    Provide `item_id` for a single publication, or `query` (Elasticsearch DSL)
-    for an aggregate over up to `max_records` publications. `country_id`
-    (ISO-3166 alpha-2) improves accuracy. When `resolve_initials` is true,
-    initials are expanded to full first names via the CONE authority service
-    before inference.
+    When `enrich` is true (default), each author is resolved against the CONE
+    authority service to fill in the full given name (expanding initials like
+    "J." to "Jan"), ORCID, and canonical affiliation when available.
 
-    Returns per-author predictions plus an aggregate summary (male / female /
-    unknown counts and the share of women among classified authors). Requires
-    network access to genderize.io; set GENDERIZE_API_KEY to raise rate limits.
+    `include_gender` is an OPTIONAL enrichment (off by default): it adds a
+    probabilistic gender guess per author from the first name via genderize.io,
+    plus an aggregate summary. It is binary-by-construction and suitable only
+    for aggregate analysis, never for claims about individuals; names that stay
+    ambiguous or fall below `probability_threshold` are reported as "unknown".
+    `country_id` (ISO-3166 alpha-2) improves both name resolution context and
+    gender accuracy. Enabling it requires network access to genderize.io
+    (set GENDERIZE_API_KEY to raise rate limits).
     """
     if item_id:
         records = [await _client.get_item(item_id)]
     else:
         records = await _client.fetch_all(query or {"match_all": {}}, max_records=max_records)
 
-    # 1) collect authors and their best-available first name
+    # 1) collect authors, optionally enriching from the CONE authority
     per_author: list[dict[str, Any]] = []
+    institutions: set[str] = set()
     for rec in records:
         rid = analysis._data(rec).get("objectId")
         for person in analysis.creators(rec):
-            given = person.get("givenName")
-            name = clean_given_name(given)
             cone_id = (person.get("identifier") or {}).get("id")
-            if name is None and resolve_initials and cone_id:
+            entry: dict[str, Any] = {
+                "itemId": rid,
+                "familyName": person.get("familyName"),
+                "firstName": clean_given_name(person.get("givenName")),
+                "personId": cone_id.rstrip("/").split("/")[-1] if cone_id else None,
+                "orcid": None,
+                "affiliation": None,
+            }
+            for org in person.get("organizations", []) or []:
+                if org.get("name"):
+                    institutions.add(org["name"])
+                    entry["affiliation"] = entry["affiliation"] or org["name"]
+            if enrich and cone_id and (entry["firstName"] is None or include_gender):
                 try:
                     resolved = await _cone.resolve_person(cone_id)
-                    name = clean_given_name(resolved.get("givenName"))
+                    entry["firstName"] = entry["firstName"] or clean_given_name(resolved.get("givenName"))
+                    entry["orcid"] = resolved.get("orcid")
+                    entry["affiliation"] = entry["affiliation"] or resolved.get("affiliation")
                 except Exception:  # noqa: BLE001 — authority lookups are best-effort
-                    name = None
-            per_author.append(
-                {
-                    "itemId": rid,
-                    "familyName": person.get("familyName"),
-                    "firstName": name,
-                }
-            )
+                    pass
+            per_author.append(entry)
 
-    # 2) genderize the unique usable first names
-    unique = sorted({a["firstName"] for a in per_author if a["firstName"]})
-    predictions = await genderize(unique, country_id=country_id) if unique else {}
-    for a in per_author:
-        pred = predictions.get(a["firstName"]) if a["firstName"] else None
-        a["gender"] = pred.get("gender") if pred else None
-        a["probability"] = pred.get("probability") if pred else None
+    summary: dict[str, Any] = {
+        "analyzedRecords": len(records),
+        "authorMentions": len(per_author),
+        "distinctAuthors": len({(a["familyName"], a["firstName"]) for a in per_author}),
+        "distinctInstitutions": len(institutions),
+        "withOrcid": sum(1 for a in per_author if a.get("orcid")),
+    }
 
-    summary = analysis.summarize_gender(per_author, threshold=probability_threshold)
-    summary["countryHint"] = country_id
-    summary["probabilityThreshold"] = probability_threshold
-    summary["disclaimer"] = (
-        "Probabilistic, binary-by-construction inference from first names. "
-        "Aggregate use only; not valid for individuals."
-    )
-    # keep the response bounded
+    # 2) optional gender enrichment
+    if include_gender:
+        unique = sorted({a["firstName"] for a in per_author if a["firstName"]})
+        predictions = await genderize(unique, country_id=country_id) if unique else {}
+        for a in per_author:
+            pred = predictions.get(a["firstName"]) if a["firstName"] else None
+            a["gender"] = pred.get("gender") if pred else None
+            a["probability"] = pred.get("probability") if pred else None
+        gender_summary = analysis.summarize_gender(per_author, threshold=probability_threshold)
+        gender_summary["countryHint"] = country_id
+        gender_summary["probabilityThreshold"] = probability_threshold
+        gender_summary["disclaimer"] = (
+            "Probabilistic, binary-by-construction inference from first names. "
+            "Aggregate use only; not valid for individuals."
+        )
+        summary["gender"] = gender_summary
+
     return {"summary": summary, "authors": per_author[:200]}
 
 
