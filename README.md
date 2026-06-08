@@ -149,21 +149,33 @@ public APIs and are skipped in CI so the suite never depends on third-party
 uptime or rate limits. GitHub Actions runs lint + offline tests on Python 3.10
 and 3.12 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
-## Publishing
+## Releases & publishing
 
-MCP servers aren't "hosted" on GitHub — GitHub holds the source, and clients
-launch the server locally over stdio. The standard distribution path:
+Versioning and changelogs are automated with
+[release-please](https://github.com/googleapis/release-please) from
+[Conventional Commits](https://www.conventionalcommits.org/) — see
+[CONTRIBUTING.md](CONTRIBUTING.md). The flow:
 
-1. **GitHub** — source of truth (this repo).
-2. **PyPI** — so users can `uvx pure-mpg-mcp`. Tag a release and the
-   [`publish`](.github/workflows/publish.yml) workflow builds and uploads via
-   PyPI [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (no
-   stored token). Configure the trusted publisher on PyPI first.
-3. **MCP Registry** (optional) — [`server.json`](server.json) is the manifest;
-   the `<!-- mcp-name: io.github.toymen/pure-mpg-mcp -->` line in this README
-   verifies ownership. Publish with the
-   [`mcp-publisher`](https://modelcontextprotocol.io/registry/quickstart) CLI
-   after the PyPI release exists.
+1. **Land Conventional Commits on `main`** (`feat:`, `fix:`, …).
+2. **release-please opens a release PR** that bumps the version across
+   `pyproject.toml`, `src/pure_mpg_mcp/__init__.py`, and [`server.json`](server.json),
+   and updates [`CHANGELOG.md`](CHANGELOG.md)
+   ([`.github/workflows/release-please.yml`](.github/workflows/release-please.yml)).
+3. **Merge the release PR** → the tag and GitHub Release are created, and the
+   package is built and pushed to **PyPI** via
+   [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC, no
+   stored token). No manual tagging.
+
+MCP servers aren't "hosted" on GitHub — GitHub holds the source, PyPI ships the
+package (`uvx pure-mpg-mcp`), and clients launch it locally over stdio. For
+discovery, the optional **MCP Registry** uses [`server.json`](server.json) as
+its manifest; the `<!-- mcp-name: io.github.toymen/pure-mpg-mcp -->` line in
+this README verifies ownership. Publish it with the
+[`mcp-publisher`](https://modelcontextprotocol.io/registry/quickstart) CLI once
+a PyPI release exists.
+
+> [`.github/workflows/publish.yml`](.github/workflows/publish.yml) remains as a
+> fallback that publishes any **manually** created GitHub Release.
 
 ## API reference
 

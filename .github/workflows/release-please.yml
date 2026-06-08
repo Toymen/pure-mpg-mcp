@@ -1,0 +1,48 @@
+name: Release Please
+
+# Automated versioning + changelog + release, driven by Conventional Commits.
+#
+# On every push to main, release-please maintains a "release PR" that bumps the
+# version (pyproject.toml, src/pure_mpg_mcp/__init__.py, server.json) and updates
+# CHANGELOG.md. Merging that PR creates the git tag and GitHub Release, which in
+# turn triggers the publish job below to upload to PyPI via Trusted Publishing.
+#
+# The publish step lives in this same workflow (gated on `release_created`)
+# because a GitHub Release created by the built-in GITHUB_TOKEN does not trigger
+# separate `on: release` workflows.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # required for PyPI Trusted Publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Build sdist and wheel
+        run: uv build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
