@@ -1,5 +1,6 @@
 # pure-mpg-mcp
 
+[![PyPI](https://img.shields.io/pypi/v/pure-mpg-mcp.svg)](https://pypi.org/project/pure-mpg-mcp/)
 [![CI](https://github.com/Toymen/pure-mpg-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Toymen/pure-mpg-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -66,57 +67,65 @@ Citation counts differ across sources because each indexes a different corpus �
 
 > **Note on analytics.** PuRe's search endpoint strips Elasticsearch aggregations, so `publication_statistics` and `coauthorship_analysis` fetch a capped sample of records (scrolled, default 300–500) and aggregate **client-side**. When `numberOfRecords` exceeds the cap, treat the figures as sample-based, and raise `max_records` if you need more (at the cost of more requests).
 
-## Install
+## Use with Claude
 
-Requires Python ≥ 3.10. Using [uv](https://docs.astral.sh/uv/):
+The server is on PyPI, so no cloning or building is needed — clients run it
+on demand with [`uvx`](https://docs.astral.sh/uv/).
 
-```bash
-# from source (clone first)
-git clone https://github.com/Toymen/pure-mpg-mcp.git
-cd pure-mpg-mcp
-uv pip install -e .
-```
-
-Once published to PyPI it will also be installable directly:
+**Prerequisite:** install [uv](https://docs.astral.sh/uv/) (provides `uvx`):
 
 ```bash
-uvx pure-mpg-mcp          # run without installing
-# or: uv pip install pure-mpg-mcp
+curl -LsSf https://astral.sh/uv/install.sh | sh     # macOS/Linux
+# Windows: powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-## Run
+### Claude Code
+
+One command:
 
 ```bash
-pure-mpg-mcp      # stdio transport
+claude mcp add pure-mpg -- uvx pure-mpg-mcp
 ```
 
-### Claude Desktop / Claude Code config
+To enable the Unpaywall full-text source as well, pass a real contact email:
 
-Add to your MCP config (`claude_desktop_config.json` or `.mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "pure-mpg": {
-      "command": "pure-mpg-mcp"
-    }
-  }
-}
+```bash
+claude mcp add pure-mpg -e PURE_CONTACT_EMAIL=you@example.org -- uvx pure-mpg-mcp
 ```
 
-If you installed into a virtualenv, point `command` at that venv's
-`pure-mpg-mcp` binary (e.g. `/path/to/.venv/bin/pure-mpg-mcp`). Once the
-package is on PyPI you can instead have the client fetch and run it via `uvx`:
+### Claude Desktop
+
+Edit `claude_desktop_config.json` (Settings → Developer → Edit Config, or):
+
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "pure-mpg": {
       "command": "uvx",
-      "args": ["pure-mpg-mcp"]
+      "args": ["pure-mpg-mcp"],
+      "env": { "PURE_CONTACT_EMAIL": "you@example.org" }
     }
   }
 }
+```
+
+Then **fully quit and reopen** Claude Desktop (closing the window isn't enough).
+The `env` block is optional — it only enables the Unpaywall source.
+
+### Claude on the web (claude.ai)
+
+Not supported directly: claude.ai Connectors accept only **remote** (HTTP) MCP
+servers, and this is a local **stdio** server. Use Claude Code or Claude Desktop.
+
+### From source (development)
+
+```bash
+git clone https://github.com/Toymen/pure-mpg-mcp.git
+cd pure-mpg-mcp
+uv pip install -e ".[dev]"
 ```
 
 ## Configuration

@@ -15,21 +15,21 @@ messages, so they must follow the
 [optional footer(s)]
 ```
 
-Common types and how they affect the version (pre-1.0, so bumps stay conservative):
+Only `feat`, `fix`, and breaking changes trigger a release. Other types show up
+in the changelog of the next release (unless hidden) but don't cut a release on
+their own. Pre-1.0, bumps stay conservative:
 
-| Type | Changelog section | Version effect (0.x) |
-| --- | --- | --- |
-| `feat:` | Features | patch bump (e.g. 0.1.0 → 0.1.1) |
-| `fix:` | Bug Fixes | patch bump |
-| `perf:` | Performance | patch bump |
-| `docs:` | Documentation | patch bump |
-| `refactor:` | Refactoring | patch bump |
-| `deps:` | Dependencies | patch bump |
-| `build:` | Build System | patch bump |
-| `ci:`, `test:`, `chore:` | hidden | no release |
-
-A breaking change — `feat!:` or a `BREAKING CHANGE:` footer — bumps the minor
-version while the project is pre-1.0, and the major version once it reaches 1.0.
+| Type | Changelog section | Triggers release? | Version effect (0.x) |
+| --- | --- | --- | --- |
+| `feat:` | Features | yes | patch bump (e.g. 0.1.0 → 0.1.1) |
+| `fix:` | Bug Fixes | yes | patch bump |
+| `feat!:` / `BREAKING CHANGE:` | — | yes | minor bump (major once ≥ 1.0) |
+| `perf:` | Performance | no | included if a release is cut |
+| `docs:` | Documentation | no | included if a release is cut |
+| `refactor:` | Refactoring | no | included if a release is cut |
+| `deps:` | Dependencies | no | included if a release is cut |
+| `build:` | Build System | no | included if a release is cut |
+| `ci:`, `test:`, `chore:` | hidden | no | — |
 
 Examples:
 
