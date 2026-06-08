@@ -1,0 +1,15 @@
+# Render blueprint: one-click deploy of the remote Streamable-HTTP MCP server.
+# Deploy via https://render.com → New → Blueprint → pick this repo.
+# After deploy, the MCP connector URL is:  https://<service>.onrender.com/mcp
+services:
+  - type: web
+    name: pure-mpg-mcp
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: MCP_TRANSPORT
+        value: http
+      # Optional: enables the Unpaywall full-text source. Set to a real address.
+      - key: PURE_CONTACT_EMAIL
+        sync: false

@@ -6,11 +6,14 @@ publicly visible publication records, organizational units, collections, and
 feeds. It cannot log in, write, or access embargoed/private content.
 
 Run:
-    pure-mpg-mcp           # stdio transport (default)
+    pure-mpg-mcp                       # stdio transport (default; local clients)
+    MCP_TRANSPORT=http pure-mpg-mcp    # streamable-HTTP at http://0.0.0.0:$PORT/mcp
+                                       # (for hosting a remote connector URL)
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -462,8 +465,22 @@ async def find_full_text(item_id: str | None = None, doi: str | None = None) -> 
 
 
 def main() -> None:
-    """Console-script entry point: run the server over stdio."""
-    mcp.run()
+    """Console-script entry point.
+
+    Defaults to stdio (for local clients like Claude Desktop/Code). Set
+    ``MCP_TRANSPORT=http`` (or ``streamable-http``) to serve over Streamable
+    HTTP instead — used when hosting a remote connector URL. ``HOST``/``PORT``
+    configure the bind address (``PORT`` is provided by most hosting platforms).
+    """
+    transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
+    if transport in ("http", "streamable-http", "streamable_http"):
+        host = os.getenv("HOST", "0.0.0.0")
+        port = int(os.getenv("PORT", "8000"))
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":

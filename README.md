@@ -115,10 +115,32 @@ Edit `claude_desktop_config.json` (Settings → Developer → Edit Config, or):
 Then **fully quit and reopen** Claude Desktop (closing the window isn't enough).
 The `env` block is optional — it only enables the Unpaywall source.
 
-### Claude on the web (claude.ai)
+### Remote connector by URL (no local install)
 
-Not supported directly: claude.ai Connectors accept only **remote** (HTTP) MCP
-servers, and this is a local **stdio** server. Use Claude Code or Claude Desktop.
+If you can't run it locally, host it once and add it to Claude as a **custom
+connector by URL** — works in Claude Desktop *and* claude.ai (web), on Free/Pro/
+Max/Team/Enterprise. No OAuth is required because the server is public and
+read-only.
+
+The same server speaks Streamable HTTP when `MCP_TRANSPORT=http` is set; the
+endpoint is `/mcp`. A [`Dockerfile`](Dockerfile) and a Render blueprint
+([`render.yaml`](render.yaml)) are included.
+
+**Deploy (Render free tier, no terminal):**
+1. Push/fork this repo, go to [render.com](https://render.com) → **New → Blueprint** → pick the repo.
+2. Render reads `render.yaml` and deploys the container. (Optional: set `PURE_CONTACT_EMAIL` to enable Unpaywall.)
+3. Your URL is `https://<service-name>.onrender.com/mcp`.
+
+Any container host works equally well — Fly.io, Google Cloud Run, Railway,
+Hugging Face Spaces — using the same `Dockerfile`. Locally:
+`docker run -e MCP_TRANSPORT=http -p 8000:8000 <image>` → `http://localhost:8000/mcp`.
+
+**Add it in Claude:** Settings → **Connectors** → **Add custom connector** →
+paste the `…/mcp` URL → Transport: **Streamable HTTP** → Add.
+
+> Note: Render's free tier sleeps after ~15 min idle, so the first request after
+> a pause is slow (cold start) but works. For always-on, use a paid tier or a
+> scale-to-zero host like Cloud Run.
 
 ### From source (development)
 
