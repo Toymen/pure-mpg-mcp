@@ -15,11 +15,15 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from . import analysis
 from .client import PureClient
+from .cone import ConeClient
+from .gender import clean_given_name, genderize
 from .models import summarize_search
 
 mcp = FastMCP("pure-mpg")
 _client = PureClient()
+_cone = ConeClient()
 
 
 @mcp.tool()
@@ -168,6 +172,183 @@ async def open_access_feed() -> str:
 async def service_info() -> dict[str, Any]:
     """Get version and status information for the PuRe instance."""
     return await _client.service_info()
+
+
+# --------------------------------------------------------------------------
+# Lookup & authority tools
+# --------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def find_by_doi(doi: str) -> dict[str, Any]:
+    """Find a Max Planck publication by its DOI.
+
+    Accepts a bare DOI ("10.1021/acsaelm.5c02138") or a doi.org URL. Returns
+    matching item summaries (usually one).
+    """
+    payload = await _client.find_by_doi(doi)
+    return summarize_search(payload)
+
+
+@mcp.tool()
+async def resolve_author(name: str | None = None, person_id: str | None = None, limit: int = 10) -> dict[str, Any]:
+    """Resolve an author against the CONE authority service.
+
+    Pass `name` to search (returns candidate persons with their CONE ids), or a
+    `person_id` (e.g. "persons314810") to get the canonical record: full given
+    name, family name, affiliation, and ORCID when known. Useful for
+    disambiguation and for expanding initials to full first names.
+    """
+    if person_id:
+        return await _cone.resolve_person(person_id)
+    if name:
+        candidates = await _cone.query_persons(name, limit=limit)
+        return {"query": name, "candidates": candidates}
+    return {"error": "provide either name or person_id"}
+
+
+@mcp.tool()
+async def author_publications(
+    name: str | None = None,
+    person_id: str | None = None,
+    size: int = 20,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """List publications by a given author.
+
+    Provide a CONE `person_id` for a precise match (queried against the
+    creator's authority id), or a `name` (family name) for a looser match.
+    """
+    if person_id:
+        pid = person_id.rstrip("/").split("/")[-1]
+        query: dict[str, Any] = {
+            "match": {"metadata.creators.person.identifier.id": f"/persons/resource/{pid}"}
+        }
+    elif name:
+        query = {"match": {"metadata.creators.person.familyName": name}}
+    else:
+        return {"error": "provide either name or person_id"}
+    payload = await _client.search_items(
+        query=query, size=size, from_=offset,
+        sort=[{"metadata.datePublishedInPrint": {"order": "desc"}}],
+    )
+    return summarize_search(payload)
+
+
+# --------------------------------------------------------------------------
+# Bibliometric analysis tools (client-side aggregation)
+# --------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def publication_statistics(
+    query: dict[str, Any] | None = None,
+    group_by: str = "year",
+    max_records: int = 500,
+    top: int = 20,
+) -> dict[str, Any]:
+    """Compute distributions over a set of publications.
+
+    `group_by` is one of: "year", "genre", "language", "organization",
+    "open_access". `query` is an Elasticsearch query DSL object (default: all
+    records). Because PuRe strips server-side aggregations, this fetches up to
+    `max_records` records (scrolled) and aggregates locally — so treat counts
+    as based on a capped sample when numberOfRecords exceeds max_records.
+    """
+    q = query or {"match_all": {}}
+    records = await _client.fetch_all(q, max_records=max_records)
+    result = analysis.distribution(records, group_by=group_by, top=top)
+    result["note"] = f"aggregated from up to {max_records} fetched records (server-side aggs unavailable)"
+    return result
+
+
+@mcp.tool()
+async def coauthorship_analysis(
+    query: dict[str, Any] | None = None,
+    max_records: int = 300,
+    top: int = 25,
+) -> dict[str, Any]:
+    """Analyze collaboration patterns across a set of publications.
+
+    Returns average team size, count of solo-authored works, and the top
+    collaborating authors and institutions. `query` is an Elasticsearch query
+    DSL object (default: all records).
+    """
+    q = query or {"match_all": {}}
+    records = await _client.fetch_all(q, max_records=max_records)
+    return analysis.coauthorship(records, top=top)
+
+
+@mcp.tool()
+async def infer_publication_gender(
+    item_id: str | None = None,
+    query: dict[str, Any] | None = None,
+    country_id: str | None = "DE",
+    resolve_initials: bool = True,
+    probability_threshold: float = 0.6,
+    max_records: int = 100,
+) -> dict[str, Any]:
+    """Estimate the gender distribution of authors for a publication or query.
+
+    PROBABILISTIC AND BINARY-BY-CONSTRUCTION. Gender is inferred from author
+    first names via genderize.io; it is suitable only for aggregate analysis,
+    never for claims about individuals. Names that are initials, ambiguous, or
+    below `probability_threshold` are reported as "unknown".
+
+    Provide `item_id` for a single publication, or `query` (Elasticsearch DSL)
+    for an aggregate over up to `max_records` publications. `country_id`
+    (ISO-3166 alpha-2) improves accuracy. When `resolve_initials` is true,
+    initials are expanded to full first names via the CONE authority service
+    before inference.
+
+    Returns per-author predictions plus an aggregate summary (male / female /
+    unknown counts and the share of women among classified authors). Requires
+    network access to genderize.io; set GENDERIZE_API_KEY to raise rate limits.
+    """
+    if item_id:
+        records = [await _client.get_item(item_id)]
+    else:
+        records = await _client.fetch_all(query or {"match_all": {}}, max_records=max_records)
+
+    # 1) collect authors and their best-available first name
+    per_author: list[dict[str, Any]] = []
+    for rec in records:
+        rid = analysis._data(rec).get("objectId")
+        for person in analysis.creators(rec):
+            given = person.get("givenName")
+            name = clean_given_name(given)
+            cone_id = (person.get("identifier") or {}).get("id")
+            if name is None and resolve_initials and cone_id:
+                try:
+                    resolved = await _cone.resolve_person(cone_id)
+                    name = clean_given_name(resolved.get("givenName"))
+                except Exception:  # noqa: BLE001 — authority lookups are best-effort
+                    name = None
+            per_author.append(
+                {
+                    "itemId": rid,
+                    "familyName": person.get("familyName"),
+                    "firstName": name,
+                }
+            )
+
+    # 2) genderize the unique usable first names
+    unique = sorted({a["firstName"] for a in per_author if a["firstName"]})
+    predictions = await genderize(unique, country_id=country_id) if unique else {}
+    for a in per_author:
+        pred = predictions.get(a["firstName"]) if a["firstName"] else None
+        a["gender"] = pred.get("gender") if pred else None
+        a["probability"] = pred.get("probability") if pred else None
+
+    summary = analysis.summarize_gender(per_author, threshold=probability_threshold)
+    summary["countryHint"] = country_id
+    summary["probabilityThreshold"] = probability_threshold
+    summary["disclaimer"] = (
+        "Probabilistic, binary-by-construction inference from first names. "
+        "Aggregate use only; not valid for individuals."
+    )
+    # keep the response bounded
+    return {"summary": summary, "authors": per_author[:200]}
 
 
 def main() -> None:

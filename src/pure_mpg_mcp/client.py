@@ -83,6 +83,47 @@ class PureClient:
         resp = await self._get(f"/items/{item_id}")
         return resp.json()
 
+    async def find_by_doi(self, doi: str) -> dict[str, Any]:
+        """Find the item whose identifier matches a DOI."""
+        doi = doi.strip()
+        doi = doi.replace("https://doi.org/", "").replace("http://doi.org/", "")
+        query = {
+            "bool": {
+                "should": [
+                    {"term": {"metadata.identifiers.id.keyword": doi}},
+                    {"match_phrase": {"metadata.identifiers.id": doi}},
+                ],
+                "minimum_should_match": 1,
+            }
+        }
+        return await self.search_items(query=query, size=5)
+
+    async def fetch_all(
+        self,
+        query: dict[str, Any],
+        max_records: int = 500,
+        page_size: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Fetch up to ``max_records`` records for a query using scroll paging.
+
+        Used by the client-side analytics tools, since the search endpoint
+        strips Elasticsearch aggregations from responses. Bounded to avoid
+        runaway crawls against the public service.
+        """
+        page_size = min(page_size, max_records)
+        first = await self.search_items(query=query, size=page_size, scroll=True)
+        records: list[dict[str, Any]] = list(first.get("records", []) or [])
+        scroll_id = first.get("scrollId")
+        total = first.get("numberOfRecords", len(records))
+        while scroll_id and len(records) < min(max_records, total):
+            page = await self.scroll_items(scroll_id)
+            batch = page.get("records", []) or []
+            if not batch:
+                break
+            records.extend(batch)
+            scroll_id = page.get("scrollId") or scroll_id
+        return records[:max_records]
+
     async def export_item(
         self,
         item_id: str,
