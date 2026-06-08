@@ -11,6 +11,22 @@ from collections import Counter
 from typing import Any
 
 
+def clean_given_name(given: str | None) -> str | None:
+    """Return a usable first name, or None if it's empty or a bare initial.
+
+    Takes the first whitespace/hyphen token, strips punctuation, and drops bare
+    initials ("J", "J.") which carry no usable signal.
+    """
+    if not given or not given.strip():
+        return None
+    token = given.strip().replace("-", " ").split()[0].strip(".,;").strip()
+    if len(token) <= 1:
+        return None
+    if len(token) == 2 and token.endswith("."):
+        return None
+    return token
+
+
 def _data(record: dict[str, Any]) -> dict[str, Any]:
     return record.get("data", record)
 
@@ -112,24 +128,4 @@ def coauthorship(records: list[dict[str, Any]], top: int = 25) -> dict[str, Any]
         "soloAuthored": sum(1 for s in team_sizes if s == 1),
         "topAuthors": [{"author": a, "publications": n} for a, n in authors.most_common(top)],
         "topInstitutions": [{"institution": i, "publications": n} for i, n in institutions.most_common(top)],
-    }
-
-
-def summarize_gender(per_author: list[dict[str, Any]], threshold: float = 0.0) -> dict[str, Any]:
-    """Aggregate per-author gender predictions into counts and shares."""
-    counts = Counter()
-    for a in per_author:
-        g = a.get("gender")
-        prob = a.get("probability") or 0
-        if g and prob >= threshold:
-            counts[g] += 1
-        else:
-            counts["unknown"] += 1
-    classified = counts["male"] + counts["female"]
-    return {
-        "authorsAnalyzed": len(per_author),
-        "male": counts["male"],
-        "female": counts["female"],
-        "unknown": counts["unknown"],
-        "shareWomenOfClassified": round(counts["female"] / classified, 3) if classified else None,
     }

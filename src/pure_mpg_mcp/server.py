@@ -18,8 +18,7 @@ from mcp.server.fastmcp import FastMCP
 from . import analysis
 from .client import PureClient
 from .cone import ConeClient
-from .enrichment import SOURCES, Enrichment
-from .gender import clean_given_name, genderize
+from .enrichment import SOURCES, Enrichment, unavailable_sources
 from .models import _first_identifier, summarize_item, summarize_search
 
 mcp = FastMCP("pure-mpg")
@@ -299,9 +298,6 @@ async def analyze_authors(
     item_id: str | None = None,
     query: dict[str, Any] | None = None,
     enrich: bool = True,
-    include_gender: bool = False,
-    country_id: str | None = "DE",
-    probability_threshold: float = 0.6,
     max_records: int = 100,
 ) -> dict[str, Any]:
     """Extract and enrich the authors of a publication or a set of publications.
@@ -309,27 +305,18 @@ async def analyze_authors(
     A general author-analysis tool. Provide `item_id` for one publication, or
     `query` (Elasticsearch DSL) for an aggregate over up to `max_records`
     publications. Returns a per-author list plus a summary (distinct authors,
-    distinct institutions, country breakdown).
+    distinct institutions, ORCID coverage).
 
-    When `enrich` is true (default), each author is resolved against the CONE
-    authority service to fill in the full given name (expanding initials like
-    "J." to "Jan"), ORCID, and canonical affiliation when available.
-
-    `include_gender` is an OPTIONAL enrichment (off by default): it adds a
-    probabilistic gender guess per author from the first name via genderize.io,
-    plus an aggregate summary. It is binary-by-construction and suitable only
-    for aggregate analysis, never for claims about individuals; names that stay
-    ambiguous or fall below `probability_threshold` are reported as "unknown".
-    `country_id` (ISO-3166 alpha-2) improves both name resolution context and
-    gender accuracy. Enabling it requires network access to genderize.io
-    (set GENDERIZE_API_KEY to raise rate limits).
+    When `enrich` is true (default), authors whose given name is only an initial
+    are resolved against the CONE authority service to fill in the full given
+    name (expanding "J." to "Jan"), ORCID, and canonical affiliation when
+    available.
     """
     if item_id:
         records = [await _client.get_item(item_id)]
     else:
         records = await _client.fetch_all(query or {"match_all": {}}, max_records=max_records)
 
-    # 1) collect authors, optionally enriching from the CONE authority
     per_author: list[dict[str, Any]] = []
     institutions: set[str] = set()
     for rec in records:
@@ -339,7 +326,7 @@ async def analyze_authors(
             entry: dict[str, Any] = {
                 "itemId": rid,
                 "familyName": person.get("familyName"),
-                "firstName": clean_given_name(person.get("givenName")),
+                "firstName": analysis.clean_given_name(person.get("givenName")),
                 "personId": cone_id.rstrip("/").split("/")[-1] if cone_id else None,
                 "orcid": None,
                 "affiliation": None,
@@ -348,10 +335,10 @@ async def analyze_authors(
                 if org.get("name"):
                     institutions.add(org["name"])
                     entry["affiliation"] = entry["affiliation"] or org["name"]
-            if enrich and cone_id and (entry["firstName"] is None or include_gender):
+            if enrich and cone_id and entry["firstName"] is None:
                 try:
                     resolved = await _cone.resolve_person(cone_id)
-                    entry["firstName"] = entry["firstName"] or clean_given_name(resolved.get("givenName"))
+                    entry["firstName"] = analysis.clean_given_name(resolved.get("givenName"))
                     entry["orcid"] = resolved.get("orcid")
                     entry["affiliation"] = entry["affiliation"] or resolved.get("affiliation")
                 except Exception:  # noqa: BLE001 — authority lookups are best-effort
@@ -365,24 +352,6 @@ async def analyze_authors(
         "distinctInstitutions": len(institutions),
         "withOrcid": sum(1 for a in per_author if a.get("orcid")),
     }
-
-    # 2) optional gender enrichment
-    if include_gender:
-        unique = sorted({a["firstName"] for a in per_author if a["firstName"]})
-        predictions = await genderize(unique, country_id=country_id) if unique else {}
-        for a in per_author:
-            pred = predictions.get(a["firstName"]) if a["firstName"] else None
-            a["gender"] = pred.get("gender") if pred else None
-            a["probability"] = pred.get("probability") if pred else None
-        gender_summary = analysis.summarize_gender(per_author, threshold=probability_threshold)
-        gender_summary["countryHint"] = country_id
-        gender_summary["probabilityThreshold"] = probability_threshold
-        gender_summary["disclaimer"] = (
-            "Probabilistic, binary-by-construction inference from first names. "
-            "Aggregate use only; not valid for individuals."
-        )
-        summary["gender"] = gender_summary
-
     return {"summary": summary, "authors": per_author[:200]}
 
 
@@ -420,13 +389,17 @@ async def enrich_publication(
     if not resolved_doi:
         return {"error": "no DOI available for this publication", "itemId": item_id}
     enrichment = await _enrich.fetch(resolved_doi, chosen)
-    return {
+    result = {
         "pure": summarize_item(record) if record else None,
         "doi": resolved_doi,
         "enrichment": enrichment,
         "sourcesQueried": chosen,
         "sourcesReturned": list(enrichment.keys()),
     }
+    skipped = unavailable_sources(chosen)
+    if skipped:
+        result["sourcesSkipped"] = skipped
+    return result
 
 
 @mcp.tool()
@@ -480,6 +453,9 @@ async def find_full_text(item_id: str | None = None, doi: str | None = None) -> 
         result["oaStatus"] = up.get("oa_status")
         result["bestFreePdf"] = up.get("best_oa_pdf")
         result["bestFreeUrl"] = up.get("best_oa_url")
+        skipped = unavailable_sources(["unpaywall"])
+        if skipped:
+            result["notes"] = skipped
     else:
         result["isOpenAccess"] = pure_files != []
     return result

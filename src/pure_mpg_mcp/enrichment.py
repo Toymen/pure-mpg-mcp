@@ -26,9 +26,38 @@ import httpx
 
 SOURCES = ("openalex", "crossref", "unpaywall", "semanticscholar")
 
+# Used only for the OpenAlex/Crossref "polite pool" (a courtesy header, not
+# validated). Unpaywall, by contrast, *requires* a real address and rejects
+# unset/example values — so it falls back to ``contact_email()`` and is skipped
+# when that is not configured.
+DEFAULT_POLITE_EMAIL = "pure-mpg-mcp@users.noreply.github.com"
 
-def _contact_email() -> str:
-    return os.getenv("PURE_CONTACT_EMAIL", "pure-mpg-mcp@example.com")
+
+def contact_email() -> str | None:
+    """A real contact email if configured, else None.
+
+    ``example.com`` addresses are treated as unset because Unpaywall rejects
+    them (HTTP 422).
+    """
+    email = os.getenv("PURE_CONTACT_EMAIL", "").strip()
+    if not email or email.lower().endswith("@example.com"):
+        return None
+    return email
+
+
+def _polite_email() -> str:
+    return contact_email() or DEFAULT_POLITE_EMAIL
+
+
+def unavailable_sources(sources: list[str]) -> dict[str, str]:
+    """Report sources that cannot run with the current configuration."""
+    notes: dict[str, str] = {}
+    if "unpaywall" in sources and contact_email() is None:
+        notes["unpaywall"] = (
+            "skipped: set PURE_CONTACT_EMAIL to a real address "
+            "(Unpaywall rejects unset/example.com emails)"
+        )
+    return notes
 
 
 def normalize_doi(doi: str) -> str:
@@ -45,7 +74,7 @@ class Enrichment:
     def __init__(self, timeout: float = 30.0) -> None:
         self._client = httpx.AsyncClient(
             timeout=timeout,
-            headers={"User-Agent": f"pure-mpg-mcp ({_contact_email()})", "Accept": "application/json"},
+            headers={"User-Agent": f"pure-mpg-mcp ({_polite_email()})", "Accept": "application/json"},
             follow_redirects=True,
         )
 
@@ -67,7 +96,7 @@ class Enrichment:
     async def openalex(self, doi: str) -> dict[str, Any] | None:
         d = await self._get_json(
             f"https://api.openalex.org/works/https://doi.org/{normalize_doi(doi)}",
-            mailto=_contact_email(),
+            mailto=_polite_email(),
         )
         if not d:
             return None
@@ -100,7 +129,7 @@ class Enrichment:
 
     async def crossref(self, doi: str) -> dict[str, Any] | None:
         d = await self._get_json(
-            f"https://api.crossref.org/works/{normalize_doi(doi)}", mailto=_contact_email()
+            f"https://api.crossref.org/works/{normalize_doi(doi)}", mailto=_polite_email()
         )
         if not d or "message" not in d:
             return None
@@ -116,9 +145,10 @@ class Enrichment:
         }
 
     async def unpaywall(self, doi: str) -> dict[str, Any] | None:
-        d = await self._get_json(
-            f"https://api.unpaywall.org/v2/{normalize_doi(doi)}", email=_contact_email()
-        )
+        email = contact_email()
+        if email is None:  # Unpaywall requires a real, non-example address
+            return None
+        d = await self._get_json(f"https://api.unpaywall.org/v2/{normalize_doi(doi)}", email=email)
         if not d:
             return None
         loc = d.get("best_oa_location") or {}

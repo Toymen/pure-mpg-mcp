@@ -4,7 +4,7 @@ CONE backs PuRe's controlled vocabularies. The persons authority is the most
 useful here: it maps a person id (e.g. ``persons314810``) to a *full* given
 name, family name, affiliation, and — when known — an ORCID. Publication
 records frequently store only initials (``"J."``), so resolving against CONE
-is what makes downstream analysis (e.g. gender inference) viable.
+is what makes downstream author analysis (full names, ORCID, affiliation) viable.
 """
 
 from __future__ import annotations
