@@ -1,7 +1,10 @@
 """Offline unit tests for the analysis, gender-cleaning, and CONE parsing logic."""
 
+import pytest
+
 from pure_mpg_mcp import analysis
 from pure_mpg_mcp.cone import ConeClient
+from pure_mpg_mcp.enrichment import Enrichment, normalize_doi
 from pure_mpg_mcp.gender import clean_given_name
 
 REC = {
@@ -73,6 +76,40 @@ def test_clean_given_name():
     assert clean_given_name("Anne-Marie") == "Anne"
     assert clean_given_name("") is None
     assert clean_given_name(None) is None
+
+
+def test_normalize_doi():
+    assert normalize_doi("https://doi.org/10.1/x") == "10.1/x"
+    assert normalize_doi("doi:10.1/x") == "10.1/x"
+    assert normalize_doi("  10.1/x ") == "10.1/x"
+
+
+async def test_enrichment_fetch_skips_unknown_and_missing(monkeypatch):
+    e = Enrichment()
+    try:
+        async def fake_openalex(doi):
+            return {"cited_by_count": 42}
+
+        async def fake_crossref(doi):
+            return None  # source has no record -> omitted
+
+        monkeypatch.setattr(e, "openalex", fake_openalex)
+        monkeypatch.setattr(e, "crossref", fake_crossref)
+        out = await e.fetch("10.1/x", ["openalex", "crossref", "bogus"])
+        assert out == {"openalex": {"cited_by_count": 42}}
+    finally:
+        await e.aclose()
+
+
+@pytest.mark.network
+async def test_openalex_live():
+    e = Enrichment()
+    try:
+        out = await e.openalex("10.1126/science.1102896")
+        assert out["cited_by_count"] > 1000
+        assert out["topics"]
+    finally:
+        await e.aclose()
 
 
 def test_cone_clean_person():

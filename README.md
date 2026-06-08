@@ -6,6 +6,8 @@ It lets any MCP client (Claude Desktop, Claude Code, etc.) search and retrieve M
 
 > **Public & read-only.** This server is anonymous: it only reaches `RELEASED`, publicly visible records. It does **not** log in, write, or access embargoed/private content. The PuRe write/curation/admin endpoints require authorization and are intentionally not exposed.
 
+> **PuRe is the center.** Every tool starts from a PuRe record. A few tools *enrich* that record with other free public scholarly APIs (CONE, OpenAlex, Crossref, Unpaywall, Semantic Scholar, genderize.io), but always keyed on identifiers PuRe itself provides (DOI, person ids). The external sources are enrichment only — never queried on their own, never the canonical record.
+
 ## Tools
 
 **Search & retrieval**
@@ -34,6 +36,29 @@ It lets any MCP client (Claude Desktop, Claude Code, etc.) search and retrieve M
 | `publication_statistics` | Distributions over a result set: by `year`, `genre`, `language`, `organization`, or `open_access` |
 | `coauthorship_analysis` | Collaboration patterns: avg team size, solo-authored count, top co-authors & institutions |
 | `analyze_authors` | Extract & enrich authors of a publication/query — full names (initials expanded via CONE), ORCID, affiliation. Optional probabilistic gender enrichment (off by default; see caveats below) |
+
+**External enrichment** (PuRe DOI → public scholarly APIs)
+
+| Tool | What it does |
+| --- | --- |
+| `enrich_publication` | Attach external signals to a PuRe item: citations, topics, institutions (ROR), funders, license, OA full text. Pick `sources` from `openalex`, `crossref`, `unpaywall`, `semanticscholar` |
+| `get_citation_metrics` | Citation counts for one publication side-by-side across OpenAlex, Crossref, and Semantic Scholar (incl. influential citations) |
+| `find_full_text` | Locate free full text — PuRe's own public files first, then Unpaywall / OpenAlex open-access locations |
+
+### Enrichment sources
+
+All are free and require no authentication. They are queried **only** with an identifier taken from a PuRe record, and any source lacking that record is silently omitted.
+
+| Source | Adds | Notes |
+| --- | --- | --- |
+| [CONE](https://pure.mpg.de/cone) | Full author names, ORCID, affiliation | MPG's own authority service |
+| [OpenAlex](https://openalex.org) | Citation count, topics, institutions/ROR, OA status, related works | No key |
+| [Crossref](https://www.crossref.org) | References, funders, license, citing count | No key |
+| [Unpaywall](https://unpaywall.org) | Definitive OA status + free full-text PDF | Requires a contact email |
+| [Semantic Scholar](https://www.semanticscholar.org) | Influential-citation count, TLDR summary | No key; rate-limited |
+| [genderize.io](https://genderize.io) | Probabilistic gender (opt-in only) | See caveats below |
+
+Citation counts differ across sources because each indexes a different corpus — that's expected, and why `get_citation_metrics` shows them side by side rather than picking one.
 
 > **Note on analytics.** PuRe's search endpoint strips Elasticsearch aggregations, so `publication_statistics` and `coauthorship_analysis` fetch a capped sample of records (scrolled, default 300–500) and aggregate **client-side**. When `numberOfRecords` exceeds the cap, treat the figures as sample-based, and raise `max_records` if you need more (at the cost of more requests).
 
@@ -98,6 +123,7 @@ or use `uvx`:
 | --- | --- | --- |
 | `PURE_BASE_URL` | `https://pure.mpg.de/rest` | Override the API base (e.g. a QA instance) |
 | `PURE_CONE_URL` | `https://pure.mpg.de/cone` | Override the CONE authority base |
+| `PURE_CONTACT_EMAIL` | `pure-mpg-mcp@example.com` | Contact email sent to OpenAlex/Crossref polite pools and required by Unpaywall. Set to a real address. |
 | `GENDERIZE_API_KEY` | _(unset)_ | Raise genderize.io rate limits for `analyze_authors`' optional gender enrichment |
 
 ## Example
