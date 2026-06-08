@@ -14,9 +14,12 @@ Run:
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcp.server.fastmcp import FastMCP
+
+if TYPE_CHECKING:
+    from mcp.server.transport_security import TransportSecuritySettings
 
 from . import analysis
 from .client import PureClient
@@ -474,13 +477,42 @@ def main() -> None:
     """
     transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
     if transport in ("http", "streamable-http", "streamable_http"):
-        host = os.getenv("HOST", "0.0.0.0")
-        port = int(os.getenv("PORT", "8000"))
-        mcp.settings.host = host
-        mcp.settings.port = port
+        mcp.settings.host = os.getenv("HOST", "0.0.0.0")
+        mcp.settings.port = int(os.getenv("PORT", "8000"))
+        mcp.settings.transport_security = _transport_security()
         mcp.run(transport="streamable-http")
     else:
         mcp.run()
+
+
+def _transport_security() -> "TransportSecuritySettings":
+    """Configure the Host/Origin allow-list for HTTP transport.
+
+    The MCP SDK enables DNS-rebinding protection by default, trusting only
+    localhost — which rejects a deployed hostname with HTTP 421. We trust the
+    platform-provided external hostname (Render sets ``RENDER_EXTERNAL_HOSTNAME``)
+    plus anything in ``MCP_ALLOWED_HOSTS`` (comma-separated). If no host can be
+    determined, protection is disabled — safe here because the server is public
+    and read-only with no auth or local resources to protect.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    hosts = [h.strip() for h in os.getenv("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    platform_host = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+    if platform_host:
+        hosts.append(platform_host)
+    if not hosts:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    # accept each host with and without an explicit port
+    allowed_hosts = ["localhost:*", "127.0.0.1:*"]
+    allowed_origins: list[str] = []
+    for h in hosts:
+        allowed_hosts += [h, f"{h}:*"]
+        allowed_origins += [f"https://{h}", f"http://{h}"]
+    return TransportSecuritySettings(
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+# Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+# MCP_DOMAIN is supplied via the environment (see compose.yaml / .env).
+{$MCP_DOMAIN} {
+	reverse_proxy mcp:8000
+}

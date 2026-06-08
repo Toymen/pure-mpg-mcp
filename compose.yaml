@@ -1,0 +1,43 @@
+# Fully open-source self-hosting for a remote MCP connector URL.
+#
+# Stack: the MCP server (this repo's Dockerfile) + Caddy (Apache-2.0) as a
+# reverse proxy that obtains HTTPS automatically via Let's Encrypt. Works with
+# Docker Engine (Apache-2.0) or Podman (podman-compose) — no proprietary PaaS.
+#
+# Prereqs: a host (any VPS or home server) and a domain whose A/AAAA record
+# points at it. Then:
+#
+#   cp .env.example .env      # set MCP_DOMAIN (and optionally PURE_CONTACT_EMAIL)
+#   docker compose up -d --build
+#
+# Your connector URL is:  https://${MCP_DOMAIN}/mcp
+
+services:
+  mcp:
+    build: .
+    restart: unless-stopped
+    environment:
+      MCP_TRANSPORT: http
+      PORT: "8000"
+      PURE_CONTACT_EMAIL: ${PURE_CONTACT_EMAIL:-}
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      MCP_DOMAIN: ${MCP_DOMAIN:?set MCP_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - mcp
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -122,25 +122,38 @@ connector by URL** — works in Claude Desktop *and* claude.ai (web), on Free/Pr
 Max/Team/Enterprise. No OAuth is required because the server is public and
 read-only.
 
-The same server speaks Streamable HTTP when `MCP_TRANSPORT=http` is set; the
-endpoint is `/mcp`. A [`Dockerfile`](Dockerfile) and a Render blueprint
-([`render.yaml`](render.yaml)) are included.
+The same server speaks Streamable HTTP at `/mcp` when `MCP_TRANSPORT=http` is
+set. A [`Dockerfile`](Dockerfile) is included; pick whichever host you like.
 
-**Deploy (Render free tier, no terminal):**
-1. Push/fork this repo, go to [render.com](https://render.com) → **New → Blueprint** → pick the repo.
-2. Render reads `render.yaml` and deploys the container. (Optional: set `PURE_CONTACT_EMAIL` to enable Unpaywall.)
-3. Your URL is `https://<service-name>.onrender.com/mcp`.
+**Option A — Render** ([`render.yaml`](render.yaml), one-click):
+go to [render.com](https://render.com) → **New → Blueprint** → pick this repo.
+Render builds the container and your URL is `https://<service>.onrender.com/mcp`.
+(Render auto-sets `RENDER_EXTERNAL_HOSTNAME`, which the server trusts as an
+allowed host. Free tier sleeps after ~15 min idle → slow first request.)
 
-Any container host works equally well — Fly.io, Google Cloud Run, Railway,
-Hugging Face Spaces — using the same `Dockerfile`. Locally:
-`docker run -e MCP_TRANSPORT=http -p 8000:8000 <image>` → `http://localhost:8000/mcp`.
+**Option B — self-hosted, fully open source** ([`compose.yaml`](compose.yaml) +
+[`Caddyfile`](Caddyfile)): runs the container behind [Caddy](https://caddyserver.com/)
+(Apache-2.0), which gets HTTPS automatically via Let's Encrypt. Needs any VPS or
+home server and a domain pointing at it:
+
+```bash
+git clone https://github.com/Toymen/pure-mpg-mcp.git && cd pure-mpg-mcp
+cp .env.example .env          # set MCP_DOMAIN to your domain
+docker compose up -d --build  # or: podman-compose up -d --build
+```
+
+URL: `https://<MCP_DOMAIN>/mcp`. Open-source PaaS like [Coolify](https://coolify.io/),
+[Dokku](https://dokku.com/), or [CapRover](https://caprover.com/) work too — they
+build the same `Dockerfile`.
+
+> **Host allow-list.** The MCP SDK has DNS-rebinding protection that trusts only
+> localhost. The server auto-trusts Render's hostname; on any other host set
+> `MCP_ALLOWED_HOSTS` to your domain (comma-separated). If neither is set,
+> protection is disabled — acceptable here since the server is public, read-only,
+> and unauthenticated.
 
 **Add it in Claude:** Settings → **Connectors** → **Add custom connector** →
 paste the `…/mcp` URL → Transport: **Streamable HTTP** → Add.
-
-> Note: Render's free tier sleeps after ~15 min idle, so the first request after
-> a pause is slow (cold start) but works. For always-on, use a paid tier or a
-> scale-to-zero host like Cloud Run.
 
 ### From source (development)
 
@@ -157,6 +170,9 @@ uv pip install -e ".[dev]"
 | `PURE_BASE_URL` | `https://pure.mpg.de/rest` | Override the API base (e.g. a QA instance) |
 | `PURE_CONE_URL` | `https://pure.mpg.de/cone` | Override the CONE authority base |
 | `PURE_CONTACT_EMAIL` | _(unset)_ | A real contact email. Used for the OpenAlex/Crossref "polite pool", and **required by Unpaywall** — `find_full_text` and `enrich_publication` skip the Unpaywall source (and say so) until this is set. `@example.com` addresses are treated as unset. |
+| `MCP_TRANSPORT` | `stdio` | Set to `http` to serve Streamable HTTP at `/mcp` (for remote hosting) instead of stdio. |
+| `PORT` / `HOST` | `8000` / `0.0.0.0` | Bind address in HTTP mode (most hosts inject `PORT`). |
+| `MCP_ALLOWED_HOSTS` | _(unset)_ | Comma-separated hostnames to trust in HTTP mode (DNS-rebinding protection). Render's hostname is trusted automatically. |
 
 ## Example
 
