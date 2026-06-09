@@ -4,6 +4,8 @@ These hit the network. Run only the offline tests with:
     pytest -m "not network"
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from pure_mpg_mcp.client import PureClient
@@ -38,6 +40,34 @@ def test_summarize_search_shape():
     out = summarize_search(payload)
     assert out["numberOfRecords"] == 1
     assert out["items"][0]["itemId"] == "item_9"
+
+
+async def test_fetch_all_no_cap():
+    """fetch_all(max_records=None) scrolls until all records are returned."""
+    client = PureClient()
+    page1 = {"numberOfRecords": 3, "records": ["r1", "r2"], "scrollId": "sid1"}
+    page2 = {"numberOfRecords": 3, "records": ["r3"], "scrollId": None}
+
+    with (
+        patch.object(client, "search_items", new=AsyncMock(return_value=page1)),
+        patch.object(client, "scroll_items", new=AsyncMock(return_value=page2)),
+    ):
+        result = await client.fetch_all({"match_all": {}}, max_records=None)
+
+    assert result == ["r1", "r2", "r3"]
+    await client.aclose()
+
+
+async def test_fetch_all_with_cap():
+    """fetch_all(max_records=N) stops once N records are collected."""
+    client = PureClient()
+    page1 = {"numberOfRecords": 10, "records": ["r1", "r2"], "scrollId": "sid1"}
+
+    with patch.object(client, "search_items", new=AsyncMock(return_value=page1)):
+        result = await client.fetch_all({"match_all": {}}, max_records=2)
+
+    assert result == ["r1", "r2"]
+    await client.aclose()
 
 
 @pytest.mark.network
