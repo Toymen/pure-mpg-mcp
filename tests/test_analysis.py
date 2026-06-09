@@ -33,7 +33,7 @@ REC = {
                 },
             ],
         },
-        "files": [{"metadata": {"visibility": "PUBLIC"}}],
+        "files": [{"visibility": "PUBLIC", "metadata": {}}],
     }
 }
 

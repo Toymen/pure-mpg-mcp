@@ -43,7 +43,7 @@ def test_summarize_search_shape():
 
 
 async def test_fetch_all_no_cap():
-    """fetch_all(max_records=None) pages via search_after until all records returned."""
+    """fetch_all(max_records=None) pages via offset until all records returned."""
     client = PureClient()
     rec1 = {"data": {"objectId": "item_1"}}
     rec2 = {"data": {"objectId": "item_2"}}
@@ -53,13 +53,16 @@ async def test_fetch_all_no_cap():
     page3 = {"numberOfRecords": 3, "records": []}
 
     mock = AsyncMock(side_effect=[page1, page2, page3])
-    with patch.object(client, "search_items", new=mock):
+    with (
+        patch.object(client, "search_items", new=mock),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
         result = await client.fetch_all({"match_all": {}}, max_records=None)
 
     assert result == [rec1, rec2, rec3]
-    # second call must carry search_after with the last id of page 1
+    # second call must use from_=2 (offset after the 2 records from page 1)
     _, kwargs = mock.call_args_list[1]
-    assert kwargs.get("search_after") == ["item_2"]
+    assert kwargs.get("from_") == 2
     await client.aclose()
 
 
@@ -75,6 +78,19 @@ async def test_fetch_all_with_cap():
 
     assert result == [rec1, rec2]
     await client.aclose()
+
+
+def test_is_open_access_uses_comp_visibility():
+    """OA check reads visibility from the component root, not component.metadata."""
+    from pure_mpg_mcp.analysis import is_open_access
+
+    rec_oa = {"data": {"files": [{"visibility": "PUBLIC", "metadata": {}}]}}
+    rec_closed = {"data": {"files": [{"visibility": "PRIVATE", "metadata": {}}]}}
+    rec_no_files = {"data": {"files": []}}
+
+    assert is_open_access(rec_oa) is True
+    assert is_open_access(rec_closed) is False
+    assert is_open_access(rec_no_files) is False
 
 
 @pytest.mark.network
