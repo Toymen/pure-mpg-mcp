@@ -264,35 +264,36 @@ async def author_publications(
 async def publication_statistics(
     query: dict[str, Any] | None = None,
     group_by: str = "year",
-    max_records: int = 500,
+    max_records: int | None = None,
     top: int = 20,
 ) -> dict[str, Any]:
     """Compute distributions over a set of publications.
 
     `group_by` is one of: "year", "genre", "language", "organization",
     "open_access". `query` is an Elasticsearch query DSL object (default: all
-    records). Because PuRe strips server-side aggregations, this fetches up to
-    `max_records` records (scrolled) and aggregates locally — so treat counts
-    as based on a capped sample when numberOfRecords exceeds max_records.
+    records). Because PuRe strips server-side aggregations, this fetches records
+    via scroll pagination and aggregates locally. Set `max_records` to an integer
+    to limit the sample; the default (null) fetches all matching records.
     """
     q = query or {"match_all": {}}
     records = await _client.fetch_all(q, max_records=max_records)
     result = analysis.distribution(records, group_by=group_by, top=top)
-    result["note"] = f"aggregated from up to {max_records} fetched records (server-side aggs unavailable)"
+    result["note"] = f"aggregated from {len(records)} fetched records (server-side aggs unavailable)"
     return result
 
 
 @mcp.tool()
 async def coauthorship_analysis(
     query: dict[str, Any] | None = None,
-    max_records: int = 300,
+    max_records: int | None = None,
     top: int = 25,
 ) -> dict[str, Any]:
     """Analyze collaboration patterns across a set of publications.
 
     Returns average team size, count of solo-authored works, and the top
     collaborating authors and institutions. `query` is an Elasticsearch query
-    DSL object (default: all records).
+    DSL object (default: all records). Set `max_records` to an integer to limit
+    the sample; the default (null) fetches all matching records.
     """
     q = query or {"match_all": {}}
     records = await _client.fetch_all(q, max_records=max_records)
@@ -304,14 +305,15 @@ async def analyze_authors(
     item_id: str | None = None,
     query: dict[str, Any] | None = None,
     enrich: bool = True,
-    max_records: int = 100,
+    max_records: int | None = None,
 ) -> dict[str, Any]:
     """Extract and enrich the authors of a publication or a set of publications.
 
     A general author-analysis tool. Provide `item_id` for one publication, or
-    `query` (Elasticsearch DSL) for an aggregate over up to `max_records`
-    publications. Returns a per-author list plus a summary (distinct authors,
-    distinct institutions, ORCID coverage).
+    `query` (Elasticsearch DSL) for an aggregate over publications. Set
+    `max_records` to an integer to limit the sample; the default (null) fetches
+    all matching records. Returns a per-author list plus a summary (distinct
+    authors, distinct institutions, ORCID coverage).
 
     When `enrich` is true (default), authors whose given name is only an initial
     are resolved against the CONE authority service to fill in the full given
@@ -358,7 +360,7 @@ async def analyze_authors(
         "distinctInstitutions": len(institutions),
         "withOrcid": sum(1 for a in per_author if a.get("orcid")),
     }
-    return {"summary": summary, "authors": per_author[:200]}
+    return {"summary": summary, "authors": per_author}
 
 
 # --------------------------------------------------------------------------

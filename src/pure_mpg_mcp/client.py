@@ -101,28 +101,30 @@ class PureClient:
     async def fetch_all(
         self,
         query: dict[str, Any],
-        max_records: int = 500,
+        max_records: int | None = None,
         page_size: int = 100,
     ) -> list[dict[str, Any]]:
-        """Fetch up to ``max_records`` records for a query using scroll paging.
+        """Fetch records for a query using scroll pagination.
 
+        Pass ``max_records=None`` (the default) to retrieve every matching
+        record. Pass a positive integer to cap the result at that count.
         Used by the client-side analytics tools, since the search endpoint
-        strips Elasticsearch aggregations from responses. Bounded to avoid
-        runaway crawls against the public service.
+        strips Elasticsearch aggregations from responses.
         """
-        page_size = min(page_size, max_records)
-        first = await self.search_items(query=query, size=page_size, scroll=True)
+        effective_page_size = min(page_size, max_records) if max_records is not None else page_size
+        first = await self.search_items(query=query, size=effective_page_size, scroll=True)
         records: list[dict[str, Any]] = list(first.get("records", []) or [])
         scroll_id = first.get("scrollId")
         total = first.get("numberOfRecords", len(records))
-        while scroll_id and len(records) < min(max_records, total):
+        limit = max_records if max_records is not None else total
+        while scroll_id and len(records) < min(limit, total):
             page = await self.scroll_items(scroll_id)
             batch = page.get("records", []) or []
             if not batch:
                 break
             records.extend(batch)
             scroll_id = page.get("scrollId") or scroll_id
-        return records[:max_records]
+        return records[:max_records] if max_records is not None else records
 
     async def export_item(
         self,
