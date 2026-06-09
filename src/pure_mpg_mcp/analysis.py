@@ -57,11 +57,11 @@ def creators(record: dict[str, Any], role: str = "AUTHOR") -> list[dict[str, Any
 
 
 def is_open_access(record: dict[str, Any]) -> bool:
-    """A record counts as OA if any component is publicly visible or CC-licensed."""
+    """A record counts as OA if any file component is publicly visible or CC-licensed."""
     for comp in _data(record).get("files", []) or []:
-        fmd = comp.get("metadata", {}) or {}
-        if (fmd.get("visibility") or "").upper() == "PUBLIC":
+        if (comp.get("visibility") or "").upper() == "PUBLIC":
             return True
+        fmd = comp.get("metadata", {}) or {}
         lic = (fmd.get("license") or "").lower()
         if "creativecommons.org" in lic:
             return True

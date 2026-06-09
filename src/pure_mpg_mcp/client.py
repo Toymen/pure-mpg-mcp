@@ -101,9 +101,10 @@ class PureClient:
         }
         return await self.search_items(query=query, size=5)
 
-    # Stable sort for search_after keyset pagination — objectId is unique and
-    # monotonically assigned, so it makes a safe, gap-free cursor.
-    _FETCH_SORT: list[dict[str, Any]] = [{"objectId.keyword": {"order": "asc"}}]
+    async def count_items(self, query: dict[str, Any]) -> int:
+        """Count items matching a query without fetching any records (size=0)."""
+        result = await self.search_items(query=query, size=0)
+        return result.get("numberOfRecords", 0)
 
     async def fetch_all(
         self,
@@ -111,29 +112,30 @@ class PureClient:
         max_records: int | None = None,
         page_size: int = 100,
     ) -> list[dict[str, Any]]:
-        """Fetch records using search_after keyset pagination.
+        """Fetch records using rate-limited offset (from+size) pagination.
 
-        Bypasses the server-side scroll window cap (typically 1 000 records)
-        by issuing a fresh query for each page, using the last record's
-        objectId as the cursor. Pass ``max_records=None`` (the default) to
-        retrieve every matching record; pass a positive integer to cap the
-        result.
+        The PuRe scroll endpoint is server-capped and the API exposes no
+        stable unique sort field for search_after, so from+size is the only
+        reliable strategy. A brief inter-page delay keeps request rates
+        within polite limits.
+
+        Pass ``max_records=None`` (default) to retrieve every matching record;
+        pass a positive integer to cap the result.
         """
+        import asyncio
+
         effective_size = min(page_size, max_records) if max_records is not None else page_size
-        first = await self.search_items(query=query, size=effective_size, sort=self._FETCH_SORT)
+        first = await self.search_items(query=query, size=effective_size, from_=0)
         records: list[dict[str, Any]] = list(first.get("records", []) or [])
         total = first.get("numberOfRecords", len(records))
         limit = max_records if max_records is not None else total
 
         while len(records) < min(limit, total):
-            last_id = (records[-1].get("data") or records[-1]).get("objectId")
-            if not last_id:
-                break
+            await asyncio.sleep(0.05)
             page = await self.search_items(
                 query=query,
-                size=effective_size,
-                sort=self._FETCH_SORT,
-                search_after=[last_id],
+                size=min(effective_size, min(limit, total) - len(records)),
+                from_=len(records),
             )
             batch = page.get("records", []) or []
             if not batch:

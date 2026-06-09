@@ -13,7 +13,9 @@ Run:
 
 from __future__ import annotations
 
+import asyncio
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from mcp.server.fastmcp import FastMCP
@@ -31,6 +33,41 @@ mcp = FastMCP("pure-mpg")
 _client = PureClient()
 _cone = ConeClient()
 _enrich = Enrichment()
+
+# --- publication_statistics: count-based aggregation helpers ---------------
+
+_STATS_CONCURRENCY = 8  # max parallel count requests
+
+_GENRES = [
+    "ARTICLE", "BOOK", "BOOK_ITEM", "CONFERENCE_PAPER", "DATA_PUBLICATION",
+    "DATASET", "FILM", "MANUAL", "MONOGRAPH", "OTHER", "PAPER", "PATENT",
+    "POSTER", "PROCEEDINGS", "REPORT", "SOFTWARE", "TALK_AT_EVENT", "THESIS",
+    "COURSEWARE_LECTURE",
+]
+
+_LANGUAGES = [
+    "ara", "cat", "ces", "dan", "deu", "ell", "eng", "fin", "fra", "heb",
+    "hun", "ita", "jpn", "kor", "lat", "nld", "nor", "pol", "por", "rus",
+    "spa", "swe", "tur", "vie", "zho",
+]
+
+
+async def _count_subquery(base: dict[str, Any], filter_clause: dict[str, Any]) -> int:
+    q: dict[str, Any] = {"bool": {"must": [base], "filter": [filter_clause]}}
+    return await _client.count_items(q)
+
+
+async def _gather_counts(
+    base: dict[str, Any],
+    items: list[tuple[str, dict[str, Any]]],
+) -> list[tuple[str, int]]:
+    sem = asyncio.Semaphore(_STATS_CONCURRENCY)
+
+    async def _one(key: str, clause: dict[str, Any]) -> tuple[str, int]:
+        async with sem:
+            return key, await _count_subquery(base, clause)
+
+    return list(await asyncio.gather(*[_one(k, c) for k, c in items]))
 
 
 async def _doi_for(item_id: str | None, doi: str | None) -> tuple[str | None, dict[str, Any] | None]:
@@ -269,17 +306,89 @@ async def publication_statistics(
 ) -> dict[str, Any]:
     """Compute distributions over a set of publications.
 
-    `group_by` is one of: "year", "genre", "language", "organization",
-    "open_access". `query` is an Elasticsearch query DSL object (default: all
-    records). Because PuRe strips server-side aggregations, this fetches records
-    via scroll pagination and aggregates locally. Set `max_records` to an integer
-    to limit the sample; the default (null) fetches all matching records.
+    `group_by` is one of: "year", "genre", "language", "open_access",
+    "organization". `query` is an Elasticsearch query DSL object (default: all
+    records).
+
+    For "year", "genre", "language", and "open_access" the counts are derived
+    from concurrent count sub-queries (size=0) — no records are fetched, so
+    results are exact regardless of dataset size. For "organization", records
+    are fetched (all by default; cap with `max_records`).
     """
     q = query or {"match_all": {}}
-    records = await _client.fetch_all(q, max_records=max_records)
-    result = analysis.distribution(records, group_by=group_by, top=top)
-    result["note"] = f"aggregated from {len(records)} fetched records (server-side aggs unavailable)"
-    return result
+
+    if group_by == "year":
+        has_date = {"exists": {"field": "metadata.datePublishedInPrint"}}
+        dated_q = {"bool": {"must": [q], "filter": [has_date]}}
+        oldest, newest = await asyncio.gather(
+            _client.search_items(query=dated_q, size=1, sort=[{"metadata.datePublishedInPrint": {"order": "asc"}}]),
+            _client.search_items(query=dated_q, size=1, sort=[{"metadata.datePublishedInPrint": {"order": "desc"}}]),
+        )
+
+        def _yr(resp: dict[str, Any], fallback: int) -> int:
+            recs = resp.get("records") or []
+            if not recs:
+                return fallback
+            val = str(((recs[0].get("data") or recs[0]).get("metadata") or {}).get("datePublishedInPrint") or "")
+            return int(val[:4]) if len(val) >= 4 and val[:4].isdigit() else fallback
+
+        min_year = max(_yr(oldest, 1900), 1800)
+        max_year = _yr(newest, datetime.now().year)
+        year_clauses = [
+            (str(yr), {"range": {"metadata.datePublishedInPrint": {
+                "gte": f"{yr}||/y", "lte": f"{yr}||/y", "format": "yyyy",
+            }}})
+            for yr in range(min_year, max_year + 1)
+        ]
+        raw = await _gather_counts(q, year_clauses)
+        buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: b["key"])
+        return {
+            "groupBy": group_by,
+            "totalMatchingRecords": sum(b["count"] for b in buckets),
+            "buckets": buckets[:top] if len(buckets) > top else buckets,
+            "note": "exact counts via targeted sub-queries",
+        }
+
+    elif group_by == "genre":
+        raw = await _gather_counts(q, [(g, {"term": {"metadata.genre": g}}) for g in _GENRES])
+        buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
+        return {
+            "groupBy": group_by,
+            "totalMatchingRecords": sum(b["count"] for b in buckets),
+            "buckets": buckets[:top],
+            "note": "exact counts via targeted sub-queries",
+        }
+
+    elif group_by == "language":
+        raw = await _gather_counts(q, [(lang, {"term": {"metadata.languages": lang}}) for lang in _LANGUAGES])
+        buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
+        return {
+            "groupBy": group_by,
+            "totalMatchingRecords": sum(b["count"] for b in buckets),
+            "buckets": buckets[:top],
+            "note": "exact counts via targeted sub-queries",
+        }
+
+    elif group_by == "open_access":
+        total, oa = await asyncio.gather(
+            _client.count_items(q),
+            _count_subquery(q, {"term": {"files.visibility": "PUBLIC"}}),
+        )
+        return {
+            "groupBy": group_by,
+            "totalMatchingRecords": total,
+            "buckets": [
+                {"key": "open_access", "count": oa},
+                {"key": "closed", "count": max(0, total - oa)},
+            ],
+            "note": "exact counts via targeted sub-queries",
+        }
+
+    else:  # organization — requires fetching records to inspect affiliation names
+        records = await _client.fetch_all(q, max_records=max_records)
+        result = analysis.distribution(records, group_by=group_by, top=top)
+        result["note"] = f"aggregated from {len(records)} fetched records"
+        return result
 
 
 @mcp.tool()
