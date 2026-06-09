@@ -65,11 +65,14 @@ class PureClient:
         sort: list[dict[str, Any]] | None = None,
         scroll: bool | None = None,
         format: str | None = None,
+        search_after: list[Any] | None = None,
     ) -> dict[str, Any]:
         """POST /items/search — Elasticsearch query DSL over public items."""
         body: dict[str, Any] = {"query": query, "size": size, "from": from_}
         if sort:
             body["sort"] = sort
+        if search_after is not None:
+            body["search_after"] = search_after
         resp = await self._post_json("/items/search", body, scroll=scroll, format=format)
         return resp.json()
 
@@ -98,32 +101,45 @@ class PureClient:
         }
         return await self.search_items(query=query, size=5)
 
+    # Stable sort for search_after keyset pagination — objectId is unique and
+    # monotonically assigned, so it makes a safe, gap-free cursor.
+    _FETCH_SORT: list[dict[str, Any]] = [{"objectId.keyword": {"order": "asc"}}]
+
     async def fetch_all(
         self,
         query: dict[str, Any],
         max_records: int | None = None,
         page_size: int = 100,
     ) -> list[dict[str, Any]]:
-        """Fetch records for a query using scroll pagination.
+        """Fetch records using search_after keyset pagination.
 
-        Pass ``max_records=None`` (the default) to retrieve every matching
-        record. Pass a positive integer to cap the result at that count.
-        Used by the client-side analytics tools, since the search endpoint
-        strips Elasticsearch aggregations from responses.
+        Bypasses the server-side scroll window cap (typically 1 000 records)
+        by issuing a fresh query for each page, using the last record's
+        objectId as the cursor. Pass ``max_records=None`` (the default) to
+        retrieve every matching record; pass a positive integer to cap the
+        result.
         """
-        effective_page_size = min(page_size, max_records) if max_records is not None else page_size
-        first = await self.search_items(query=query, size=effective_page_size, scroll=True)
+        effective_size = min(page_size, max_records) if max_records is not None else page_size
+        first = await self.search_items(query=query, size=effective_size, sort=self._FETCH_SORT)
         records: list[dict[str, Any]] = list(first.get("records", []) or [])
-        scroll_id = first.get("scrollId")
         total = first.get("numberOfRecords", len(records))
         limit = max_records if max_records is not None else total
-        while scroll_id and len(records) < min(limit, total):
-            page = await self.scroll_items(scroll_id)
+
+        while len(records) < min(limit, total):
+            last_id = (records[-1].get("data") or records[-1]).get("objectId")
+            if not last_id:
+                break
+            page = await self.search_items(
+                query=query,
+                size=effective_size,
+                sort=self._FETCH_SORT,
+                search_after=[last_id],
+            )
             batch = page.get("records", []) or []
             if not batch:
                 break
             records.extend(batch)
-            scroll_id = page.get("scrollId") or scroll_id
+
         return records[:max_records] if max_records is not None else records
 
     async def export_item(

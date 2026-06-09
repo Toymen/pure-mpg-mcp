@@ -43,30 +43,37 @@ def test_summarize_search_shape():
 
 
 async def test_fetch_all_no_cap():
-    """fetch_all(max_records=None) scrolls until all records are returned."""
+    """fetch_all(max_records=None) pages via search_after until all records returned."""
     client = PureClient()
-    page1 = {"numberOfRecords": 3, "records": ["r1", "r2"], "scrollId": "sid1"}
-    page2 = {"numberOfRecords": 3, "records": ["r3"], "scrollId": None}
+    rec1 = {"data": {"objectId": "item_1"}}
+    rec2 = {"data": {"objectId": "item_2"}}
+    rec3 = {"data": {"objectId": "item_3"}}
+    page1 = {"numberOfRecords": 3, "records": [rec1, rec2]}
+    page2 = {"numberOfRecords": 3, "records": [rec3]}
+    page3 = {"numberOfRecords": 3, "records": []}
 
-    with (
-        patch.object(client, "search_items", new=AsyncMock(return_value=page1)),
-        patch.object(client, "scroll_items", new=AsyncMock(return_value=page2)),
-    ):
+    mock = AsyncMock(side_effect=[page1, page2, page3])
+    with patch.object(client, "search_items", new=mock):
         result = await client.fetch_all({"match_all": {}}, max_records=None)
 
-    assert result == ["r1", "r2", "r3"]
+    assert result == [rec1, rec2, rec3]
+    # second call must carry search_after with the last id of page 1
+    _, kwargs = mock.call_args_list[1]
+    assert kwargs.get("search_after") == ["item_2"]
     await client.aclose()
 
 
 async def test_fetch_all_with_cap():
     """fetch_all(max_records=N) stops once N records are collected."""
     client = PureClient()
-    page1 = {"numberOfRecords": 10, "records": ["r1", "r2"], "scrollId": "sid1"}
+    rec1 = {"data": {"objectId": "item_1"}}
+    rec2 = {"data": {"objectId": "item_2"}}
+    page1 = {"numberOfRecords": 10, "records": [rec1, rec2]}
 
     with patch.object(client, "search_items", new=AsyncMock(return_value=page1)):
         result = await client.fetch_all({"match_all": {}}, max_records=2)
 
-    assert result == ["r1", "r2"]
+    assert result == [rec1, rec2]
     await client.aclose()
 
 
