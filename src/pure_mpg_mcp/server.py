@@ -888,7 +888,8 @@ async def find_full_text(item_id: str | None = None, doi: str | None = None) -> 
     if record:
         for comp in record.get("files", []) or []:
             fmd = comp.get("metadata", {}) or {}
-            if (fmd.get("visibility") or "").upper() == "PUBLIC":
+            visibility = comp.get("visibility") or fmd.get("visibility")
+            if (visibility or "").upper() == "PUBLIC":
                 pure_files.append(
                     {
                         "componentId": comp.get("objectId"),

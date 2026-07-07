@@ -14,6 +14,9 @@ import httpx
 
 DEFAULT_BASE_URL = "https://pure.mpg.de/rest"
 USER_AGENT = "pure-mpg-mcp/0.1 (+https://github.com/)"
+FEED_ACCEPT = "application/atom+xml, application/rss+xml, application/xml, text/xml, */*"
+MAX_SAFE_SEARCH_PAGE_SIZE = 20_000
+DEFAULT_FETCH_ALL_PAGE_SIZE = 10_000
 
 
 class PureClient:
@@ -43,9 +46,10 @@ class PureClient:
 
     # --- low-level helpers -------------------------------------------------
 
-    async def _get(self, path: str, **params: Any) -> httpx.Response:
+    async def _get(self, path: str, accept: str | None = None, **params: Any) -> httpx.Response:
         clean = {k: v for k, v in params.items() if v is not None}
-        resp = await self._client.get(path, params=clean)
+        headers = {"Accept": accept} if accept else None
+        resp = await self._client.get(path, params=clean, headers=headers)
         resp.raise_for_status()
         return resp
 
@@ -110,7 +114,7 @@ class PureClient:
         self,
         query: dict[str, Any],
         max_records: int | None = None,
-        page_size: int = 100,
+        page_size: int = DEFAULT_FETCH_ALL_PAGE_SIZE,
     ) -> list[dict[str, Any]]:
         """Fetch records using rate-limited offset (from+size) pagination.
 
@@ -129,7 +133,9 @@ class PureClient:
         """
         import asyncio
 
-        effective_size = min(page_size, max_records) if max_records is not None else page_size
+        effective_size = min(page_size, MAX_SAFE_SEARCH_PAGE_SIZE)
+        if max_records is not None:
+            effective_size = min(effective_size, max_records)
         first = await self.search_items(query=query, size=effective_size, from_=0)
         records: list[dict[str, Any]] = list(first.get("records", []) or [])
         total = first.get("numberOfRecords", len(records))
@@ -192,8 +198,11 @@ class PureClient:
 
     async def get_component_metadata(self, item_id: str, component_id: str) -> dict[str, Any]:
         """GET /items/{itemId}/component/{componentId}/metadata — file metadata."""
-        resp = await self._get(f"/items/{item_id}/component/{component_id}/metadata")
-        return resp.json()
+        resp = await self._get(f"/items/{item_id}/component/{component_id}/metadata", accept="text/plain")
+        try:
+            return resp.json()
+        except ValueError:
+            return self._parse_text_metadata(resp.text)
 
     def component_content_url(self, item_id: str, component_id: str) -> str:
         """Direct download URL for a file component (anonymous for PUBLIC files)."""
@@ -233,20 +242,35 @@ class PureClient:
 
     async def ou_id_path(self, ou_id: str) -> Any:
         """GET /ous/{ouId}/idPath — ancestor OU ids from the unit to the root."""
-        resp = await self._get(f"/ous/{ou_id}/idPath")
-        return self._json_or_text(resp)
+        resp = await self._get(f"/ous/{ou_id}/idPath", accept="text/plain")
+        return self._json_or_text_list(resp)
 
     async def ou_name_path(self, ou_id: str) -> Any:
         """GET /ous/{ouId}/ouPath — ancestor OU names from the unit to the root."""
-        resp = await self._get(f"/ous/{ou_id}/ouPath")
-        return self._json_or_text(resp)
+        resp = await self._get(f"/ous/{ou_id}/ouPath", accept="text/plain")
+        return self._json_or_text_list(resp)
 
     @staticmethod
-    def _json_or_text(resp: httpx.Response) -> Any:
+    def _json_or_text_list(resp: httpx.Response) -> Any:
         try:
             return resp.json()
         except ValueError:
-            return resp.text
+            text = resp.text.strip()
+            if "," in text:
+                return [part.strip() for part in text.split(",") if part.strip()]
+            return text
+
+    @staticmethod
+    def _parse_text_metadata(text: str) -> dict[str, Any]:
+        meta: dict[str, Any] = {}
+        for line in text.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(": ", 1) if ": " in line else line.split(":", 1)
+            key = key.strip()
+            if key:
+                meta[key] = value.strip()
+        return meta or {"raw": text}
 
     # --- contexts (collections) -------------------------------------------
 
@@ -265,22 +289,22 @@ class PureClient:
 
     async def feed_recent(self) -> str:
         """GET /feed/recent — RSS/Atom feed of recently released items."""
-        resp = await self._get("/feed/recent")
+        resp = await self._get("/feed/recent", accept=FEED_ACCEPT)
         return resp.text
 
     async def feed_open_access(self) -> str:
         """GET /feed/oa — feed of recent open-access items."""
-        resp = await self._get("/feed/oa")
+        resp = await self._get("/feed/oa", accept=FEED_ACCEPT)
         return resp.text
 
     async def feed_organization(self, ou_id: str) -> str:
         """GET /feed/organization/{ouId} — feed of recent releases for one OU."""
-        resp = await self._get(f"/feed/organization/{ou_id}")
+        resp = await self._get(f"/feed/organization/{ou_id}", accept=FEED_ACCEPT)
         return resp.text
 
     async def feed_search(self, q: str) -> str:
         """GET /feed/search — any search, rendered as an RSS/Atom feed."""
-        resp = await self._get("/feed/search", q=q)
+        resp = await self._get("/feed/search", accept=FEED_ACCEPT, q=q)
         return resp.text
 
     async def service_info(self) -> dict[str, Any]:

@@ -43,7 +43,10 @@ packages = ["src/pure_mpg_mcp"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-markers = ["network: tests that hit the live public PuRe API"]
+markers = [
+    "network: tests that hit live public services",
+    "limit: tests that document rate limits or upstream public-access limitations",
+]
 
 [tool.ruff]
 line-length = 110

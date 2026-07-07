@@ -1,0 +1,1692 @@
+{
+  "info": {
+    "description": "Derived from anonymous live probing of https://pure.mpg.de/rest. This intentionally excludes write, curation, import, password, and admin operations.",
+    "title": "PuRe PubMan Anonymous Public REST API",
+    "version": "live-probed-2026-07-07"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/contexts/search": {
+      "post": {
+        "operationId": "post_contexts_search",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "from": 0,
+                "query": {
+                  "match_all": {}
+                },
+                "size": 1
+              },
+              "schema": {
+                "properties": {
+                  "from": {
+                    "default": 0,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "query": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "size": {
+                    "default": 10,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "sort": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "query"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Search public contexts",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/contexts/{ctxId}": {
+      "get": {
+        "operationId": "get_contexts_ctxId",
+        "parameters": [
+          {
+            "example": "ctx_1835112",
+            "in": "path",
+            "name": "ctxId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get one public context",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/feed/oa": {
+      "get": {
+        "operationId": "get_feed_oa",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/atom+xml": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Recent-open-access Atom feed",
+        "x-liveProbe": {
+          "accept": "application/atom+xml, application/rss+xml, application/xml, text/xml, */*",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "application/json Accept returns HTTP 406.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/feed/organization/{ouId}": {
+      "get": {
+        "operationId": "get_feed_organization_ouId",
+        "parameters": [
+          {
+            "example": "ou_1497640",
+            "in": "path",
+            "name": "ouId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/atom+xml": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Organization Atom feed",
+        "x-liveProbe": {
+          "accept": "application/atom+xml, application/rss+xml, application/xml, text/xml, */*",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "application/json Accept returns HTTP 406.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/feed/recent": {
+      "get": {
+        "operationId": "get_feed_recent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/atom+xml": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Recent-publications Atom feed",
+        "x-liveProbe": {
+          "accept": "application/atom+xml, application/rss+xml, application/xml, text/xml, */*",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "application/json Accept returns HTTP 406.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/feed/search": {
+      "get": {
+        "operationId": "get_feed_search",
+        "parameters": [
+          {
+            "example": "graphene",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          }
+        },
+        "summary": "Search Atom feed",
+        "x-liveProbe": {
+          "accept": "application/atom+xml, application/rss+xml, application/xml, text/xml, */*",
+          "anonymous": true,
+          "confirmedPublic": false,
+          "limitation": "Endpoint is anonymously reachable, but live probing returned HTTP 500 JsonParsingException for normal q values.",
+          "observedStatus": 500,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/search": {
+      "post": {
+        "operationId": "post_items_search",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "from": 0,
+                "query": {
+                  "match_all": {}
+                },
+                "size": 1
+              },
+              "schema": {
+                "properties": {
+                  "from": {
+                    "default": 0,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "query": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "size": {
+                    "default": 10,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "sort": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "query"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Search public publication items",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/search/scroll": {
+      "get": {
+        "operationId": "get_items_search_scroll",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scrollId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Continue a public item search scroll",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "Requires a valid scrollId returned by /items/search; invalid ids returned HTTP 500 in live probing.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/{itemId}": {
+      "get": {
+        "operationId": "get_items_itemId",
+        "parameters": [
+          {
+            "example": "item_1552993",
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get one public publication item",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/{itemId}/authorization": {
+      "get": {
+        "operationId": "get_items_itemId_authorization",
+        "parameters": [
+          {
+            "example": "item_1552993",
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get anonymous authorization flags for one item",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/{itemId}/component/{componentId}/content": {
+      "get": {
+        "operationId": "get_items_itemId_component_componentId_content",
+        "parameters": [
+          {
+            "example": "item_1554385",
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "example": "file_2123384",
+            "in": "path",
+            "name": "componentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Download public file component content",
+        "x-liveProbe": {
+          "accept": "*/*",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "Only public file components are anonymously downloadable.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/{itemId}/component/{componentId}/metadata": {
+      "get": {
+        "operationId": "get_items_itemId_component_componentId_metadata",
+        "parameters": [
+          {
+            "example": "item_1554385",
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "example": "file_2123384",
+            "in": "path",
+            "name": "componentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get public file component metadata",
+        "x-liveProbe": {
+          "accept": "text/plain",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "Live service returns text/plain; application/json returns HTTP 406.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/{itemId}/component/{componentId}/thumbnail": {
+      "get": {
+        "operationId": "get_items_itemId_component_componentId_thumbnail",
+        "parameters": [
+          {
+            "example": "item_1554385",
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "example": "file_2123384",
+            "in": "path",
+            "name": "componentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/*": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get public file component thumbnail",
+        "x-liveProbe": {
+          "accept": "*/*",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "Only components with generated thumbnails return image data.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/{itemId}/export": {
+      "get": {
+        "operationId": "get_items_itemId_export",
+        "parameters": [
+          {
+            "example": "item_1552993",
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "example": "BibTex",
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Export one public item",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/items/{itemId}/history": {
+      "get": {
+        "operationId": "get_items_itemId_history",
+        "parameters": [
+          {
+            "example": "item_1552993",
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get public item history",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/login/who": {
+      "get": {
+        "operationId": "get_login_who",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Anonymous session status",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/logout": {
+      "get": {
+        "operationId": "get_logout",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Logout anonymous session",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/miscellaneous/serviceInfo": {
+      "get": {
+        "operationId": "get_miscellaneous_serviceInfo",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Service info",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/miscellaneous/{sitemapFile}": {
+      "get": {
+        "operationId": "get_miscellaneous_sitemapFile",
+        "parameters": [
+          {
+            "example": "sitemap.xml",
+            "in": "path",
+            "name": "sitemapFile",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Public sitemap",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/ous/firstlevel": {
+      "get": {
+        "operationId": "get_ous_firstlevel",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "List first-level OUs",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/ous/search": {
+      "post": {
+        "operationId": "post_ous_search",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "from": 0,
+                "query": {
+                  "match_all": {}
+                },
+                "size": 1
+              },
+              "schema": {
+                "properties": {
+                  "from": {
+                    "default": 0,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "query": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "size": {
+                    "default": 10,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "sort": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "query"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Search public organizational units",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/ous/toplevel": {
+      "get": {
+        "operationId": "get_ous_toplevel",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "List root OUs",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/ous/{ouId}": {
+      "get": {
+        "operationId": "get_ous_ouId",
+        "parameters": [
+          {
+            "example": "ou_1497640",
+            "in": "path",
+            "name": "ouId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get one public organizational unit",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/ous/{ouId}/children": {
+      "get": {
+        "operationId": "get_ous_ouId_children",
+        "parameters": [
+          {
+            "example": "ou_1497640",
+            "in": "path",
+            "name": "ouId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get OU children",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/ous/{ouId}/idPath": {
+      "get": {
+        "operationId": "get_ous_ouId_idPath",
+        "parameters": [
+          {
+            "example": "ou_1497640",
+            "in": "path",
+            "name": "ouId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get OU id path",
+        "x-liveProbe": {
+          "accept": "text/plain",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "Live service returns text/plain comma-separated ids; application/json returns HTTP 406.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/ous/{ouId}/ouPath": {
+      "get": {
+        "operationId": "get_ous_ouId_ouPath",
+        "parameters": [
+          {
+            "example": "ou_1497640",
+            "in": "path",
+            "name": "ouId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get OU name path",
+        "x-liveProbe": {
+          "accept": "text/plain",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "limitation": "Live service returns text/plain comma-separated names; application/json returns HTTP 406.",
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    },
+    "/ous/{ouId}/parents": {
+      "get": {
+        "operationId": "get_ous_ouId_parents",
+        "parameters": [
+          {
+            "example": "ou_1497640",
+            "in": "path",
+            "name": "ouId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Observed anonymous live response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Authentication required or permission denied"
+          },
+          "429": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rate limited by the public PuRe service"
+          }
+        },
+        "summary": "Get OU parents",
+        "x-liveProbe": {
+          "accept": "application/json",
+          "anonymous": true,
+          "confirmedPublic": true,
+          "observedStatus": 200,
+          "source": "anonymous live probes and regression live tests on 2026-07-07"
+        }
+      }
+    }
+  },
+  "security": [],
+  "servers": [
+    {
+      "url": "https://pure.mpg.de/rest"
+    }
+  ],
+  "x-liveDiscovery": {
+    "excluded": [
+      "PUT/DELETE operations were not executed because they are mutating.",
+      "POST create/import/login/password/admin operations are excluded from the read-only public surface.",
+      "Endpoints returning 401/403 for anonymous users are not advertised as public operations."
+    ],
+    "largeResultWindow": "Anonymous /items/search reported 593751 records during probing. Offset pagination returned records at offsets 500000, 590000, and 593750; offsets equal to or beyond the total returned zero records. Page sizes up to 25000 were observed working, while 26000 and higher returned HTTP 500, so the MCP client caps bulk pages at 20000 and defaults fetch_all to 10000.",
+    "method": "safe anonymous try/error probing plus MCP regression live tests",
+    "rateLimit": "The service returned HTTP 429 during broad mixed-endpoint probing; 429 responses were HTML and did not include Retry-After or X-RateLimit headers. Follow-up probes on /items/search succeeded with 8 requests at 1.0s spacing, 8 requests at 0.25s spacing, and 20 requests at 0.1s spacing. The broad-probe block cleared within roughly 10 minutes. Prefer low concurrency and avoid sweeping admin/import/mutating paths."
+  }
+}

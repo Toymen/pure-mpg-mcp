@@ -470,6 +470,19 @@ async def test_find_full_text_prefers_pure_files_then_unpaywall():
     assert out["bestFreePdf"] == "u.pdf"
 
 
+async def test_find_full_text_reads_root_file_visibility():
+    item = _item_with_doi("10.1/x")
+    item["files"][0]["metadata"].pop("visibility", None)
+    item["files"][0]["visibility"] = "PUBLIC"
+    with (
+        patch.object(server._client, "get_item", new=AsyncMock(return_value=item)),
+        patch.object(server._enrich, "fetch", new=AsyncMock(return_value={})),
+    ):
+        out = await server.find_full_text(item_id="item_d")
+    assert out["purePublicFiles"] == [{"componentId": "comp_1", "name": "paper.pdf", "license": None}]
+    assert out["isOpenAccess"] is True
+
+
 async def test_find_full_text_without_doi():
     out = await server.find_full_text()
     assert out == {"doi": None, "purePublicFiles": [], "isOpenAccess": False}

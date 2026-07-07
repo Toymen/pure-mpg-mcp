@@ -107,6 +107,19 @@ async def test_fetch_all_pages_past_ten_thousand_records():
     await client.aclose()
 
 
+async def test_fetch_all_caps_page_size_to_live_safe_limit():
+    client = PureClient()
+    page = {"numberOfRecords": 1, "records": [{"data": {"objectId": "item_1"}}]}
+    mock = AsyncMock(return_value=page)
+
+    with patch.object(client, "search_items", new=mock):
+        result = await client.fetch_all({"match_all": {}}, max_records=None, page_size=50_000)
+
+    assert result == page["records"]
+    assert mock.call_args.kwargs["size"] == 20_000
+    await client.aclose()
+
+
 def test_is_open_access_uses_comp_visibility():
     """OA check reads visibility from the component root, not component.metadata."""
     from pure_mpg_mcp.analysis import is_open_access

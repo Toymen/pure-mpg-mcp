@@ -81,9 +81,17 @@ class ConeClient:
         resp = await self._client.get("/iso639-3/all", params={"format": "json"})
         resp.raise_for_status()
         try:
-            return resp.json()
+            raw = resp.json()
         except ValueError:
             return []
+        return [self._clean_language(entry) for entry in raw if isinstance(entry, dict)]
+
+    @staticmethod
+    def _clean_language(entry: dict[str, Any]) -> dict[str, str]:
+        out = {k: str(v) for k, v in entry.items() if v is not None}
+        if "id" in out:
+            out["id"] = out["id"].rstrip("/").split("/")[-1]
+        return out
 
     @staticmethod
     def _clean_person(pid: str, raw: dict[str, Any]) -> dict[str, Any]:
