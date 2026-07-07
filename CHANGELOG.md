@@ -5,6 +5,13 @@ maintained automatically by [release-please](https://github.com/googleapis/relea
 from [Conventional Commits](https://www.conventionalcommits.org/); see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [0.1.3](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.2...pure-mpg-mcp-v0.1.3) (2026-07-07)
+
+
+### Documentation
+
+* add mcp client setup guide ([bc70f52](https://github.com/Toymen/pure-mpg-mcp/commit/bc70f5231d197eb8ef7e7ca3fd03dc453d196c86))
+
 ## [0.1.2](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.1...pure-mpg-mcp-v0.1.2) (2026-07-07)
 
 
