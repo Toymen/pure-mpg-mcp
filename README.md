@@ -20,17 +20,25 @@ It lets any MCP client (Claude Desktop, Claude Code, etc.) search and retrieve M
 
 | Tool | What it does |
 | --- | --- |
-| `search_publications` | Search by free text, author, genre, and year (compact results) |
+| `search_publications` | Search with every field of the PuRe advanced search: text, title, keyword (Schlagwörter), classification, fulltext, author, orcid, organization, genre, review method, language, source/journal, identifier, local tag, collection, project info, event, and any of the 9 date criteria |
 | `search_raw` | Run a raw Elasticsearch query for advanced cases |
 | `get_publication` | Full metadata for one item id (e.g. `item_1552993`) |
 | `find_by_doi` | Look up a publication by DOI (bare or doi.org URL) |
-| `export_publication` | Export as BibTeX, citation, MARC, EndNote, … |
-| `get_file_metadata` | Metadata for an attached file (component) |
+| `export_publication` | Export one item as BibTeX, citation, MARC, EndNote, … |
+| `export_search_results` | Bulk-export a whole search result set in one call (up to 5000 records) |
+| `get_file_metadata` | Metadata for an attached file (component), plus its content/thumbnail URLs |
 | `search_organizations` | Search institutes / departments (organizational units) |
+| `get_organization` | One organizational unit by id |
 | `list_top_organizations` | Top-level organizational units |
+| `list_first_level_organizations` | First-level organizational units |
+| `organization_children` | Direct child units of an organizational unit |
+| `organization_hierarchy` | Ancestor path (id + name) from a unit up to its root institute |
 | `search_collections` | Search contexts (collections) |
+| `get_collection` | One context (collection) by id |
 | `recent_publications` | Feed of recently released items |
 | `open_access_feed` | Feed of recent open-access items |
+| `organization_feed` | Feed of recent releases for one organizational unit |
+| `search_feed` | Any search, rendered as an RSS/Atom feed |
 | `service_info` | Version / status of the PuRe instance |
 
 **Authority & analysis** (for bibliometrics)
@@ -39,9 +47,9 @@ It lets any MCP client (Claude Desktop, Claude Code, etc.) search and retrieve M
 | --- | --- |
 | `resolve_author` | Resolve a name/person-id against the CONE authority → full name, affiliation, ORCID. Expands initials. |
 | `author_publications` | List an author's publications (by CONE id or family name) |
-| `publication_statistics` | Distributions over a result set: by `year`, `genre`, `language`, `organization`, or `open_access` |
-| `coauthorship_analysis` | Collaboration patterns: avg team size, solo-authored count, top co-authors & institutions |
-| `analyze_authors` | Extract & enrich authors of a publication/query — full names (initials expanded via CONE), ORCID, affiliation |
+| `publication_statistics` | Distributions over a result set: by `year`, `genre`, `language`, `organization`, `open_access`, or `oa_status` (gold/green/hybrid/…) |
+| `coauthorship_analysis` | Collaboration patterns: avg team size, solo-authored count, top co-authors & institutions (authors and editors) |
+| `analyze_authors` | Extract & enrich authors of a publication/query — full names (initials expanded via CONE), ORCID (inline or CONE), affiliation |
 
 **External enrichment** (PuRe DOI → public scholarly APIs)
 

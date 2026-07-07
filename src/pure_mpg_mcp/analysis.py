@@ -44,11 +44,18 @@ def _year(record: dict[str, Any]) -> str | None:
     return None
 
 
-def creators(record: dict[str, Any], role: str = "AUTHOR") -> list[dict[str, Any]]:
-    """Return person creators (optionally filtered by role)."""
+def creators(
+    record: dict[str, Any],
+    roles: tuple[str, ...] | None = ("AUTHOR", "EDITOR"),
+) -> list[dict[str, Any]]:
+    """Return person creators, filtered to `roles` (None = all roles).
+
+    Editors are included by default: for books, collected editions, and
+    proceedings they are the primary creators.
+    """
     out = []
     for c in _md(record).get("creators", []) or []:
-        if role and c.get("role") and c["role"] != role:
+        if roles and c.get("role") and c["role"] not in roles:
             continue
         person = c.get("person")
         if person:
@@ -57,11 +64,19 @@ def creators(record: dict[str, Any], role: str = "AUTHOR") -> list[dict[str, Any
 
 
 def is_open_access(record: dict[str, Any]) -> bool:
-    """A record counts as OA if any file component is publicly visible or CC-licensed."""
+    """A record counts as OA if a file component is publicly visible or CC-licensed.
+
+    Locators (external links) are always visibility=PUBLIC in PubMan, and can
+    explicitly carry ``oaStatus: CLOSED_ACCESS`` — a public link to a paywalled
+    publisher page. Those must not count as open access.
+    """
     for comp in _data(record).get("files", []) or []:
+        fmd = comp.get("metadata", {}) or {}
+        oa_status = (comp.get("oaStatus") or fmd.get("oaStatus") or "").upper()
+        if oa_status == "CLOSED_ACCESS":
+            continue
         if (comp.get("visibility") or "").upper() == "PUBLIC":
             return True
-        fmd = comp.get("metadata", {}) or {}
         lic = (fmd.get("license") or "").lower()
         if "creativecommons.org" in lic:
             return True

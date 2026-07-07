@@ -15,6 +15,10 @@ import httpx
 DEFAULT_BASE_URL = "https://pure.mpg.de/rest"
 USER_AGENT = "pure-mpg-mcp/0.1 (+https://github.com/)"
 
+# Elasticsearch rejects from+size beyond index.max_result_window (default 10k),
+# and the PuRe scroll endpoint is server-capped, so offset pagination stops here.
+MAX_RESULT_WINDOW = 10_000
+
 
 class PureClient:
     """Minimal async wrapper over the PuRe REST API (public read surface)."""
@@ -120,7 +124,9 @@ class PureClient:
         within polite limits.
 
         Pass ``max_records=None`` (default) to retrieve every matching record;
-        pass a positive integer to cap the result.
+        pass a positive integer to cap the result. Retrieval is hard-capped at
+        ``MAX_RESULT_WINDOW`` records because Elasticsearch rejects deeper
+        offsets; callers see the true total via the search response.
         """
         import asyncio
 
@@ -129,12 +135,13 @@ class PureClient:
         records: list[dict[str, Any]] = list(first.get("records", []) or [])
         total = first.get("numberOfRecords", len(records))
         limit = max_records if max_records is not None else total
+        target = min(limit, total, MAX_RESULT_WINDOW)
 
-        while len(records) < min(limit, total):
+        while len(records) < target:
             await asyncio.sleep(0.05)
             page = await self.search_items(
                 query=query,
-                size=min(effective_size, min(limit, total) - len(records)),
+                size=min(effective_size, target - len(records)),
                 from_=len(records),
             )
             batch = page.get("records", []) or []
@@ -160,10 +167,42 @@ class PureClient:
         )
         return resp.text
 
+    async def export_search(
+        self,
+        query: dict[str, Any],
+        format: str = "BibTex",
+        citation: str | None = None,
+        csl_cone_id: str | None = None,
+        size: int = 100,
+        from_: int = 0,
+        sort: list[dict[str, Any]] | None = None,
+    ) -> str:
+        """POST /items/search?format=… — export a whole result set in one call.
+
+        The search endpoint renders results directly as BibTex, EndNote,
+        Marc_Xml, or formatted citations (escidoc_snippet/json_citation with
+        ``citation``/``cslConeId``). Max 5000 items per download (API limit).
+        """
+        body: dict[str, Any] = {"query": query, "size": size, "from": from_}
+        if sort:
+            body["sort"] = sort
+        resp = await self._post_json(
+            "/items/search", body, format=format, citation=citation, cslConeId=csl_cone_id
+        )
+        return resp.text
+
     async def get_component_metadata(self, item_id: str, component_id: str) -> dict[str, Any]:
         """GET /items/{itemId}/component/{componentId}/metadata — file metadata."""
         resp = await self._get(f"/items/{item_id}/component/{component_id}/metadata")
         return resp.json()
+
+    def component_content_url(self, item_id: str, component_id: str) -> str:
+        """Direct download URL for a file component (anonymous for PUBLIC files)."""
+        return f"{self.base_url}/items/{item_id}/component/{component_id}/content"
+
+    def component_thumbnail_url(self, item_id: str, component_id: str) -> str:
+        """Thumbnail URL for a file component (anonymous for PUBLIC files)."""
+        return f"{self.base_url}/items/{item_id}/component/{component_id}/thumbnail"
 
     # --- organizational units ---------------------------------------------
 
@@ -183,12 +222,44 @@ class PureClient:
         resp = await self._get("/ous/toplevel")
         return resp.json()
 
+    async def ous_firstlevel(self) -> dict[str, Any]:
+        """GET /ous/firstlevel — first-level organizational units."""
+        resp = await self._get("/ous/firstlevel")
+        return resp.json()
+
+    async def ou_children(self, ou_id: str) -> Any:
+        """GET /ous/{ouId}/children — direct child organizational units."""
+        resp = await self._get(f"/ous/{ou_id}/children")
+        return resp.json()
+
+    async def ou_id_path(self, ou_id: str) -> Any:
+        """GET /ous/{ouId}/idPath — ancestor OU ids from the unit to the root."""
+        resp = await self._get(f"/ous/{ou_id}/idPath")
+        return self._json_or_text(resp)
+
+    async def ou_name_path(self, ou_id: str) -> Any:
+        """GET /ous/{ouId}/ouPath — ancestor OU names from the unit to the root."""
+        resp = await self._get(f"/ous/{ou_id}/ouPath")
+        return self._json_or_text(resp)
+
+    @staticmethod
+    def _json_or_text(resp: httpx.Response) -> Any:
+        try:
+            return resp.json()
+        except ValueError:
+            return resp.text
+
     # --- contexts (collections) -------------------------------------------
 
     async def search_contexts(self, query: dict[str, Any], size: int = 10, from_: int = 0) -> dict[str, Any]:
         """POST /contexts/search — search contexts (collections)."""
         body = {"query": query, "size": size, "from": from_}
         resp = await self._post_json("/contexts/search", body)
+        return resp.json()
+
+    async def get_context(self, ctx_id: str) -> dict[str, Any]:
+        """GET /contexts/{ctxId} — one context (collection)."""
+        resp = await self._get(f"/contexts/{ctx_id}")
         return resp.json()
 
     # --- feeds & service ---------------------------------------------------
@@ -201,6 +272,16 @@ class PureClient:
     async def feed_open_access(self) -> str:
         """GET /feed/oa — feed of recent open-access items."""
         resp = await self._get("/feed/oa")
+        return resp.text
+
+    async def feed_organization(self, ou_id: str) -> str:
+        """GET /feed/organization/{ouId} — feed of recent releases for one OU."""
+        resp = await self._get(f"/feed/organization/{ou_id}")
+        return resp.text
+
+    async def feed_search(self, q: str) -> str:
+        """GET /feed/search — any search, rendered as an RSS/Atom feed."""
+        resp = await self._get("/feed/search", q=q)
         return resp.text
 
     async def service_info(self) -> dict[str, Any]:

@@ -41,12 +41,26 @@ def _pure_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"objectId": "ou_1"})
     if path == "/rest/ous/toplevel":
         return httpx.Response(200, json=[{"objectId": "ou_root"}])
+    if path == "/rest/ous/firstlevel":
+        return httpx.Response(200, json=[{"objectId": "ou_first"}])
+    if path == "/rest/ous/ou_1/children":
+        return httpx.Response(200, json=[{"objectId": "ou_child"}])
+    if path == "/rest/ous/ou_1/idPath":
+        return httpx.Response(200, json=["ou_1", "ou_root"])
+    if path == "/rest/ous/ou_1/ouPath":
+        return httpx.Response(200, json=["Dept", "Institute"])
     if path == "/rest/contexts/search":
         return httpx.Response(200, json={"numberOfRecords": 3})
+    if path == "/rest/contexts/ctx_1":
+        return httpx.Response(200, json={"objectId": "ctx_1"})
     if path == "/rest/feed/recent":
         return httpx.Response(200, text="<rss>recent</rss>")
     if path == "/rest/feed/oa":
         return httpx.Response(200, text="<rss>oa</rss>")
+    if path == "/rest/feed/organization/ou_1":
+        return httpx.Response(200, text="<rss>ou</rss>")
+    if path == "/rest/feed/search":
+        return httpx.Response(200, text=f"<rss>{request.url.params['q']}</rss>")
     if path == "/rest/miscellaneous/serviceInfo":
         return httpx.Response(200, text="")
     return httpx.Response(404)
@@ -83,6 +97,42 @@ async def test_scroll_get_export_component_and_misc_endpoints(pure):
     assert (await pure.search_contexts({"match_all": {}}))["numberOfRecords"] == 3
     assert "recent" in await pure.feed_recent()
     assert "oa" in await pure.feed_open_access()
+
+
+async def test_organization_tree_and_context_and_extra_feeds(pure):
+    assert (await pure.ous_firstlevel())[0]["objectId"] == "ou_first"
+    assert (await pure.ou_children("ou_1"))[0]["objectId"] == "ou_child"
+    assert await pure.ou_id_path("ou_1") == ["ou_1", "ou_root"]
+    assert await pure.ou_name_path("ou_1") == ["Dept", "Institute"]
+    assert (await pure.get_context("ctx_1"))["objectId"] == "ctx_1"
+    assert "ou" in await pure.feed_organization("ou_1")
+    assert "graphene" in await pure.feed_search("graphene")
+
+
+def test_component_content_and_thumbnail_urls():
+    c = PureClient(base_url="https://pure.test/rest/")
+    assert c.component_content_url("item_1", "comp_1") == "https://pure.test/rest/items/item_1/component/comp_1/content"
+    assert (
+        c.component_thumbnail_url("item_1", "comp_1")
+        == "https://pure.test/rest/items/item_1/component/comp_1/thumbnail"
+    )
+
+
+async def test_export_search_posts_format_and_citation_params():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/rest/items/search"
+        assert dict(request.url.params) == {
+            "format": "json_citation", "citation": "APA", "cslConeId": "csl_1",
+        }
+        return httpx.Response(200, text="citation text")
+
+    c = PureClient(base_url="https://pure.test/rest")
+    _mock(c, handler)
+    async with c:
+        out = await c.export_search(
+            {"match_all": {}}, format="json_citation", citation="APA", csl_cone_id="csl_1",
+        )
+    assert out == "citation text"
 
 
 async def test_find_by_doi_strips_url_prefix(pure):

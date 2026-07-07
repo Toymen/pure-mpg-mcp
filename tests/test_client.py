@@ -80,6 +80,23 @@ async def test_fetch_all_with_cap():
     await client.aclose()
 
 
+async def test_fetch_all_stops_at_elasticsearch_result_window():
+    """fetch_all(max_records=None) never pages past the ES from+size ceiling."""
+    from pure_mpg_mcp.client import MAX_RESULT_WINDOW
+
+    client = PureClient()
+    page = {"numberOfRecords": MAX_RESULT_WINDOW + 5_000, "records": [{"data": {"objectId": "x"}}] * 100}
+
+    with (
+        patch.object(client, "search_items", new=AsyncMock(return_value=page)),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        result = await client.fetch_all({"match_all": {}}, max_records=None, page_size=100)
+
+    assert len(result) == MAX_RESULT_WINDOW
+    await client.aclose()
+
+
 def test_is_open_access_uses_comp_visibility():
     """OA check reads visibility from the component root, not component.metadata."""
     from pure_mpg_mcp.analysis import is_open_access

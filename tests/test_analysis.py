@@ -43,6 +43,42 @@ def test_year_and_open_access():
     assert analysis.is_open_access(REC) is True
 
 
+def test_closed_access_locator_is_not_open_access():
+    """A PUBLIC-visibility locator pointing at a paywalled page must not count as OA."""
+    locator_only = {"data": {"files": [{"visibility": "PUBLIC", "oaStatus": "CLOSED_ACCESS", "metadata": {}}]}}
+    assert analysis.is_open_access(locator_only) is False
+
+    mixed = {
+        "data": {
+            "files": [
+                {"visibility": "PUBLIC", "oaStatus": "CLOSED_ACCESS", "metadata": {}},
+                {"visibility": "PUBLIC", "oaStatus": "GOLD", "metadata": {}},
+            ]
+        }
+    }
+    assert analysis.is_open_access(mixed) is True
+
+
+def test_creators_includes_editors_by_default():
+    rec = {
+        "data": {
+            "metadata": {
+                "creators": [
+                    {"role": "EDITOR", "person": {"familyName": "Editorson"}},
+                    {"role": "AUTHOR", "person": {"familyName": "Authorman"}},
+                    {"role": "TRANSLATOR", "person": {"familyName": "Translated"}},
+                ]
+            }
+        }
+    }
+    names = {p["familyName"] for p in analysis.creators(rec)}
+    assert names == {"Editorson", "Authorman"}
+    assert {p["familyName"] for p in analysis.creators(rec, roles=("AUTHOR",))} == {"Authorman"}
+    assert {p["familyName"] for p in analysis.creators(rec, roles=None)} == {
+        "Editorson", "Authorman", "Translated",
+    }
+
+
 def test_distribution_genre_and_org():
     d = analysis.distribution([REC], group_by="genre")
     assert d["buckets"][0] == {"key": "ARTICLE", "count": 1}
