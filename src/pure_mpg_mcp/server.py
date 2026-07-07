@@ -14,7 +14,6 @@ Run:
 from __future__ import annotations
 
 import asyncio
-import difflib
 import os
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -34,6 +33,14 @@ mcp = FastMCP("pure-mpg")
 _client = PureClient()
 _cone = ConeClient()
 _enrich = Enrichment()
+
+
+@mcp.custom_route("/health", methods=["GET", "HEAD"])
+async def _health(_request: Any) -> Any:
+    """Plain HTTP health check for the hosting platform (the MCP endpoint itself expects the MCP protocol, not a bare GET)."""
+    from starlette.responses import PlainTextResponse
+
+    return PlainTextResponse("ok")
 
 # --- publication_statistics: count-based aggregation helpers ---------------
 
@@ -68,24 +75,6 @@ _OA_STATUSES = ["GOLD", "GREEN", "HYBRID", "MISCELLANEOUS", "NOT_SPECIFIED", "CL
 
 _DATE_PUBLISHED = ["metadata.datePublishedInPrint", "metadata.datePublishedOnline"]
 
-_REVIEW_METHODS = ["PEER", "INTERNAL", "NO_REVIEW"]
-
-_EXPORT_FORMATS = [
-    "json", "eSciDoc_Itemlist_Xml", "BibTex", "Endnote", "Marc_Xml", "pdf",
-    "docx", "html_plain", "html_linked", "json_citation", "escidoc_snippet",
-]
-
-_CITATIONS = ["CSL", "APA", "APA(CJK)", "AJP", "JUS"]
-
-_STAT_GROUPS = ["year", "genre", "language", "organization", "open_access", "oa_status"]
-
-_SEARCH_FIELDS = [
-    "all", "text", "title", "keyword", "classification", "fulltext", "author",
-    "orcid", "organization", "genre", "review_method", "language", "source",
-    "identifier", "local_tag", "collection", "project", "event", "year",
-    "date_range",
-]
-
 # Date criteria of the PubMan advanced search, mapped to index fields.
 _DATE_FIELDS: dict[str, list[str]] = {
     "any": [
@@ -104,65 +93,6 @@ _DATE_FIELDS: dict[str, list[str]] = {
     "event_start": ["metadata.event.startDate"],
     "event_end": ["metadata.event.endDate"],
 }
-
-
-def _with_all(options: list[str]) -> list[str]:
-    """Return a stable option list with the user-facing wildcard first."""
-    deduped = list(dict.fromkeys(options))
-    return ["all", *[o for o in deduped if o != "all"]]
-
-
-def _option_question(
-    field: str,
-    value: str | None,
-    options: list[str],
-    *,
-    prompt: str | None = None,
-    limit: int = 12,
-    cutoff: float = 0.72,
-) -> dict[str, Any] | None:
-    if value is None or str(value).strip().lower() == "all":
-        return None
-    raw = str(value).strip()
-    if raw in options:
-        return None
-
-    by_upper = {opt.upper(): opt for opt in options}
-    normalized = by_upper.get(raw.upper())
-    if normalized:
-        return None
-
-    matches = difflib.get_close_matches(raw.upper(), [opt.upper() for opt in options], n=4, cutoff=cutoff)
-    suggestions = [by_upper[m] for m in matches]
-    if not suggestions:
-        return {
-            "field": field,
-            "detectedInput": raw,
-            "question": prompt or f"Which {field} should be used?",
-            "options": _with_all(options[:limit]),
-            "reason": "Input is not one of PubMan's controlled values.",
-        }
-    return {
-        "field": field,
-        "detectedInput": raw,
-        "suggestedValue": suggestions[0],
-        "question": prompt or f"Did you mean {suggestions[0]} for {field}?",
-        "options": _with_all([*suggestions, *options[:limit]]),
-        "reason": "Input looks like a typo or near match for a PubMan controlled value.",
-    }
-
-
-def _selected_value(value: str | None, options: list[str]) -> str | None:
-    if value is None or str(value).strip().lower() == "all":
-        return None
-    raw = str(value).strip()
-    for opt in options:
-        if raw.upper() == opt.upper():
-            return opt
-    matches = difflib.get_close_matches(raw.upper(), [opt.upper() for opt in options], n=1, cutoff=0.72)
-    if matches:
-        return next(opt for opt in options if opt.upper() == matches[0])
-    return None
 
 
 def _range_for(field: str, gte: str | None, lte: str | None) -> dict[str, Any]:
@@ -203,6 +133,20 @@ async def _gather_counts(
     return list(await asyncio.gather(*[_one(k, c) for k, c in items]))
 
 
+async def _term_distribution(
+    q: dict[str, Any], group_by: str, field: str, values: list[str], top: int
+) -> dict[str, Any]:
+    """Exact per-value counts for a term field, via concurrent count sub-queries."""
+    raw = await _gather_counts(q, [(v, {"term": {field: v}}) for v in values])
+    buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
+    return {
+        "groupBy": group_by,
+        "totalMatchingRecords": sum(b["count"] for b in buckets),
+        "buckets": buckets[:top],
+        "note": "exact counts via targeted sub-queries",
+    }
+
+
 async def _language_codes() -> list[str]:
     """ISO 639-3 codes to check for `publication_statistics(group_by="language")`.
 
@@ -234,6 +178,26 @@ async def _doi_for(item_id: str | None, doi: str | None) -> tuple[str | None, di
     return doi, None
 
 
+# Search criteria that translate straight to a single `match` clause —
+# "PuRe field name" -> "ES field path".
+_MATCH_FIELDS = {
+    "title": "metadata.title",  # "Titel"
+    "keyword": "metadata.freeKeywords",  # "Schlagwörter"
+    "classification": "metadata.subjects.value",  # "Klassifikation" — controlled subjects
+    "source": "metadata.sources.title",  # "Quelle"/"Zeitschrift"
+    "local_tag": "localTags",  # "Lokale Tags"
+    "event": "metadata.event.title",  # "Titel der Veranstaltung"
+}
+
+# Search criteria that translate to a single `term` clause (exact match).
+# "PuRe field name" -> (ES field path, uppercase the value first).
+_TERM_FIELDS = {
+    "genre": ("metadata.genre", True),
+    "review_method": ("metadata.reviewMethod", True),  # "Begutachtung" — PEER/INTERNAL/NO_REVIEW
+    "language": ("metadata.languages", False),  # ISO 639-3, e.g. "eng", "deu"
+}
+
+
 def _build_search_query(  # noqa: C901 — one clause per search criterion
     text: str | None = None,
     title: str | None = None,
@@ -258,15 +222,17 @@ def _build_search_query(  # noqa: C901 — one clause per search criterion
     date_field: str = "any",
 ) -> dict[str, Any]:
     """Translate the PubMan advanced-search criteria into an ES bool query."""
+    values = locals()
     must: list[dict[str, Any]] = []
+    for field, es_field in _MATCH_FIELDS.items():
+        if values[field]:
+            must.append({"match": {es_field: values[field]}})
+    for field, (es_field, upper) in _TERM_FIELDS.items():
+        if values[field]:
+            must.append({"term": {es_field: values[field].upper() if upper else values[field]}})
+
     if text:  # "Alle Felder" — all indexed fields
         must.append({"simple_query_string": {"query": text}})
-    if title:  # "Titel"
-        must.append({"match": {"metadata.title": title}})
-    if keyword:  # "Schlagwörter"
-        must.append({"match": {"metadata.freeKeywords": keyword}})
-    if classification:  # "Klassifikation" — controlled subjects
-        must.append({"match": {"metadata.subjects.value": classification}})
     if fulltext:  # "Volltext" — text extracted from attached files
         must.append(
             {
@@ -306,14 +272,6 @@ def _build_search_query(  # noqa: C901 — one clause per search criterion
             )
         else:
             must.append({"match": {"metadata.creators.person.organizations.name": organization}})
-    if genre:
-        must.append({"term": {"metadata.genre": genre.upper()}})
-    if review_method:  # "Begutachtung" — PEER, INTERNAL, NO_REVIEW
-        must.append({"term": {"metadata.reviewMethod": review_method.upper()}})
-    if language:  # ISO 639-3 code, e.g. "eng", "deu"
-        must.append({"term": {"metadata.languages": language}})
-    if source:  # "Quelle" / "Zeitschrift" — journal, book, or proceedings title
-        must.append({"match": {"metadata.sources.title": source}})
     if identifier:  # "Identifikatoren" — DOI, ISBN, ISSN, arXiv, PMID, …
         must.append(
             {
@@ -327,8 +285,6 @@ def _build_search_query(  # noqa: C901 — one clause per search criterion
                 }
             }
         )
-    if local_tag:  # "Lokale Tags"
-        must.append({"match": {"localTags": local_tag}})
     if collection:  # "Kontext" — context id like ctx_123456
         must.append({"term": {"context.objectId": collection}})
     if project:  # "Projekt-Information" — title, grant id, funder, or program
@@ -345,8 +301,6 @@ def _build_search_query(  # noqa: C901 — one clause per search criterion
                 }
             }
         )
-    if event:  # "Titel der Veranstaltung"
-        must.append({"match": {"metadata.event.title": event}})
     if year:
         must.append(_date_clause(_DATE_PUBLISHED, str(year), str(year)))
     if date_from or date_to:
@@ -355,113 +309,6 @@ def _build_search_query(  # noqa: C901 — one clause per search criterion
             raise ValueError(f"unknown date_field: {date_field!r} (one of {sorted(_DATE_FIELDS)})")
         must.append(_date_clause(fields, date_from, date_to))
     return {"bool": {"must": must}} if must else {"match_all": {}}
-
-
-@mcp.tool()
-async def guide_publication_search(
-    intent: str | None = None,
-    genre: str | None = None,
-    language: str | None = None,
-    review_method: str | None = None,
-    date_field: str | None = None,
-    export_format: str | None = None,
-    citation: str | None = None,
-    enrichment_source: str | None = None,
-    statistics_group: str | None = None,
-) -> dict[str, Any]:
-    """Guide a user toward valid PuRe/PubMan tool arguments.
-
-    Use this before calling search/export/statistics tools when the request is
-    vague, asks for options, or contains a possible typo in a controlled value.
-    It returns short questions and selectable option lists; every option list
-    starts with `all` so clients can offer "no filter / all values".
-
-    PubMan REST context: the public read surface is centered on
-    `/items/search`, `/items/{itemId}`, `/items/{itemId}/export`, contexts
-    (`ctx_...`), organizational units (`ou_...`), feeds, and public file
-    metadata/content endpoints. This MCP intentionally exposes only anonymous,
-    read-only operations over released public records.
-    """
-    questions: list[dict[str, Any]] = []
-    normalized: dict[str, Any] = {}
-
-    for question in [
-        _option_question("genre", genre, _GENRES, prompt="Which publication genre should be used?"),
-        _option_question(
-            "review_method",
-            review_method,
-            _REVIEW_METHODS,
-            prompt="Which review method should be used?",
-        ),
-        _option_question(
-            "date_field",
-            date_field,
-            list(_DATE_FIELDS),
-            prompt="Which PubMan date criterion should the range apply to?",
-        ),
-        _option_question(
-            "export_format",
-            export_format,
-            _EXPORT_FORMATS,
-            prompt="Which export format should PubMan return?",
-        ),
-        _option_question("citation", citation, _CITATIONS, prompt="Which citation style should be used?"),
-        _option_question(
-            "enrichment_source",
-            enrichment_source,
-            list(SOURCES),
-            prompt="Which public enrichment source should be queried?",
-        ),
-        _option_question(
-            "statistics_group",
-            statistics_group,
-            _STAT_GROUPS,
-            prompt="Which distribution should be computed?",
-        ),
-    ]:
-        if question:
-            questions.append(question)
-
-    normalized["genre"] = _selected_value(genre, _GENRES)
-    normalized["review_method"] = _selected_value(review_method, _REVIEW_METHODS)
-    normalized["date_field"] = _selected_value(date_field, list(_DATE_FIELDS)) or "any"
-    normalized["export_format"] = _selected_value(export_format, _EXPORT_FORMATS)
-    normalized["citation"] = _selected_value(citation, _CITATIONS)
-    normalized["enrichment_source"] = _selected_value(enrichment_source, list(SOURCES))
-    normalized["statistics_group"] = _selected_value(statistics_group, _STAT_GROUPS)
-    if language and language.strip().lower() != "all":
-        normalized["language"] = language.strip().lower()
-
-    if not intent:
-        questions.append(
-            {
-                "field": "search_scope",
-                "question": "Which PuRe search field should carry the user's main terms?",
-                "options": _with_all(_SEARCH_FIELDS[1:]),
-                "reason": "PubMan supports broad all-field search plus narrower advanced-search fields.",
-            }
-        )
-
-    return {
-        "summary": "Use these choices to clarify ambiguous PubMan requests before calling the concrete MCP tools.",
-        "questions": questions,
-        "normalizedArguments": {k: v for k, v in normalized.items() if v is not None},
-        "commonNextTools": [
-            "search_publications",
-            "find_by_doi",
-            "get_publication",
-            "export_publication",
-            "export_search_results",
-            "publication_statistics",
-        ],
-        "alwaysOfferAll": True,
-        "selectionNotes": {
-            "all": "Means no filter for this field, or all available values when computing/exporting.",
-            "ids": "Use `ou_...` ids for organizations and `ctx_...` ids for collections when available.",
-            "largeResults": "PubMan documents a 5000-record export cap; page exports with size/offset.",
-        },
-        "source": "https://colab.mpdl.mpg.de/mediawiki/PubMan_REST_API_Documentation",
-    }
 
 
 @mcp.tool()
@@ -493,21 +340,33 @@ async def search_publications(
 ) -> dict[str, Any]:
     """Search Max Planck publications in PuRe (all advanced-search criteria).
 
+    Most user requests to this tool will be in German — the PuRe advanced-search
+    UI field names are given below so German terms map straight to a parameter.
+
     Every filter of the PuRe advanced search is available; combine freely
     (all conditions must match):
-      `text` all fields | `title` | `keyword` (Schlagwörter/freeKeywords) |
-      `classification` (controlled subjects) | `fulltext` (attached file text) |
-      `author` (creator name) | `orcid` | `organization` (name, or an ou_… id —
-      ids also match publications of all sub-units) | `genre` (e.g. ARTICLE,
-      PREPRINT, THESIS) | `review_method` (PEER/INTERNAL/NO_REVIEW) |
-      `language` (ISO 639-3, e.g. eng) | `source` (journal/book title) |
-      `identifier` (DOI, ISBN, arXiv, …) | `local_tag` | `collection` (ctx_… id) |
-      `project` (project/funding info) | `event` (event title).
+      `text` all fields (Alle Felder) | `title` (Titel) |
+      `keyword` (Schlagwörter/freeKeywords) |
+      `classification` (Klassifikation — controlled subjects) |
+      `fulltext` (Volltext — attached file text) |
+      `author` (Urheber — creator name) | `orcid` (ORCID) |
+      `organization` (Organisation — name, or an ou_… id — ids also match
+      publications of all sub-units) | `genre` (Genre; e.g. ARTICLE, PREPRINT,
+      THESIS) | `review_method` (Begutachtung — PEER/INTERNAL/NO_REVIEW) |
+      `language` (Sprachen — ISO 639-3, e.g. deu, eng) |
+      `source` (Quelle/Zeitschrift — journal/book title) |
+      `identifier` (Identifikatoren — DOI, ISBN, arXiv, …) |
+      `local_tag` (Lokale Tags) | `collection` (Kontext — ctx_… id) |
+      `project` (Projekt-Information) | `event` (Titel der Veranstaltung).
 
-    Dates: `year` matches the publication year (print or online). For other
-    ranges use `date_from`/`date_to` (YYYY or YYYY-MM-DD) with `date_field`:
-    any, published_in_print, published_online, accepted, submitted, modified,
-    created, modified_internal, created_internal, event_start, event_end.
+    Dates (Datum): `year` matches the publication year (print or online). For
+    other ranges use `date_from`/`date_to` (YYYY or YYYY-MM-DD) with
+    `date_field`: any (Datum), published_in_print (Erschienen), published_online
+    (Online veröffentlicht), accepted (Angenommen), submitted (Eingereicht),
+    modified (Geändert), created (Erstellt), modified_internal
+    (Änderungsdatum (technisch)), created_internal (Erstellungsdatum
+    (technisch)), event_start (Veranstaltungsbeginn), event_end
+    (Veranstaltungsende).
 
     Returns numberOfRecords plus compact item summaries (set
     `full_records=True` for raw records). Fetch full metadata for a hit with
@@ -804,7 +663,8 @@ async def publication_statistics(
     "open_access", and "oa_status" the counts are derived from concurrent count
     sub-queries (size=0) — no records are fetched, so results are exact
     regardless of dataset size. For "organization", records are fetched (all
-    by default; cap with `max_records`).
+    by default; cap with `max_records`) and every creator role counts, not
+    just authors/editors.
     """
     q = query or {"match_all": {}}
 
@@ -850,25 +710,10 @@ async def publication_statistics(
         }
 
     elif group_by == "genre":
-        raw = await _gather_counts(q, [(g, {"term": {"metadata.genre": g}}) for g in _GENRES])
-        buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
-        return {
-            "groupBy": group_by,
-            "totalMatchingRecords": sum(b["count"] for b in buckets),
-            "buckets": buckets[:top],
-            "note": "exact counts via targeted sub-queries",
-        }
+        return await _term_distribution(q, group_by, "metadata.genre", _GENRES, top)
 
     elif group_by == "language":
-        codes = await _language_codes()
-        raw = await _gather_counts(q, [(lang, {"term": {"metadata.languages": lang}}) for lang in codes])
-        buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
-        return {
-            "groupBy": group_by,
-            "totalMatchingRecords": sum(b["count"] for b in buckets),
-            "buckets": buckets[:top],
-            "note": "exact counts via targeted sub-queries",
-        }
+        return await _term_distribution(q, group_by, "metadata.languages", await _language_codes(), top)
 
     elif group_by == "open_access":
         # A public file whose oaStatus is explicitly CLOSED_ACCESS is a locator
@@ -894,14 +739,7 @@ async def publication_statistics(
         }
 
     elif group_by == "oa_status":
-        raw = await _gather_counts(q, [(s, {"term": {"files.oaStatus": s}}) for s in _OA_STATUSES])
-        buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
-        return {
-            "groupBy": group_by,
-            "totalMatchingRecords": sum(b["count"] for b in buckets),
-            "buckets": buckets,
-            "note": "exact counts via targeted sub-queries",
-        }
+        return await _term_distribution(q, group_by, "files.oaStatus", _OA_STATUSES, top)
 
     else:  # organization — requires fetching records to inspect affiliation names
         records = await _client.fetch_all(q, max_records=max_records)
@@ -919,9 +757,11 @@ async def coauthorship_analysis(
     """Analyze collaboration patterns across a set of publications.
 
     Returns average team size, count of solo-authored works, and the top
-    collaborating authors and institutions. `query` is an Elasticsearch query
-    DSL object (default: all records). Set `max_records` to an integer to limit
-    the sample; the default (null) fetches all matching records.
+    collaborating authors and institutions, counting every creator role
+    (AUTHOR, EDITOR, TRANSLATOR, DIRECTOR, ...) — not just authors. `query` is
+    an Elasticsearch query DSL object (default: all records). Set
+    `max_records` to an integer to limit the sample; the default (null)
+    fetches all matching records.
     """
     q = query or {"match_all": {}}
     records = await _client.fetch_all(q, max_records=max_records)
@@ -940,8 +780,12 @@ async def analyze_authors(
     A general author-analysis tool. Provide `item_id` for one publication, or
     `query` (Elasticsearch DSL) for an aggregate over publications. Set
     `max_records` to an integer to limit the sample; the default (null) fetches
-    all matching records. Returns a per-author list plus a summary (distinct
-    authors, distinct institutions, ORCID coverage).
+    all matching records. Returns every creator regardless of role (AUTHOR,
+    EDITOR, TRANSLATOR, DIRECTOR, REFEREE, INVENTOR, ...) — each entry carries
+    its `role` plus `personId`/`orcid` so grouping, filtering, or dedup by
+    identity is left to the caller instead of being decided here. Also
+    returns a summary (distinct authors, distinct institutions, ORCID
+    coverage).
 
     When `enrich` is true (default), authors whose given name is only an initial
     are resolved against the CONE authority service to fill in the full given
@@ -961,6 +805,7 @@ async def analyze_authors(
             cone_id = (person.get("identifier") or {}).get("id")
             entry: dict[str, Any] = {
                 "itemId": rid,
+                "role": person.get("role"),
                 "familyName": person.get("familyName"),
                 "firstName": analysis.clean_given_name(person.get("givenName")),
                 "personId": cone_id.rstrip("/").split("/")[-1] if cone_id else None,

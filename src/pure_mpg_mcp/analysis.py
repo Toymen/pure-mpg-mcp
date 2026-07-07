@@ -46,20 +46,21 @@ def _year(record: dict[str, Any]) -> str | None:
 
 def creators(
     record: dict[str, Any],
-    roles: tuple[str, ...] | None = ("AUTHOR", "EDITOR"),
+    roles: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
-    """Return person creators, filtered to `roles` (None = all roles).
+    """Return person creators with their creator `role` attached.
 
-    Editors are included by default: for books, collected editions, and
-    proceedings they are the primary creators.
+    Defaults to every role PubMan records (AUTHOR, EDITOR, TRANSLATOR,
+    DIRECTOR, REFEREE, INVENTOR, ...) so nothing is silently dropped from
+    aggregate views. Pass `roles` to narrow to a subset.
     """
     out = []
     for c in _md(record).get("creators", []) or []:
-        if roles and c.get("role") and c["role"] not in roles:
+        if roles and c.get("role") not in roles:
             continue
         person = c.get("person")
         if person:
-            out.append(person)
+            out.append({**person, "role": c.get("role")})
     return out
 
 

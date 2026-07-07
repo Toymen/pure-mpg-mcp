@@ -59,7 +59,7 @@ def test_closed_access_locator_is_not_open_access():
     assert analysis.is_open_access(mixed) is True
 
 
-def test_creators_includes_editors_by_default():
+def test_creators_includes_every_role_by_default():
     rec = {
         "data": {
             "metadata": {
@@ -72,11 +72,11 @@ def test_creators_includes_editors_by_default():
         }
     }
     names = {p["familyName"] for p in analysis.creators(rec)}
-    assert names == {"Editorson", "Authorman"}
+    assert names == {"Editorson", "Authorman", "Translated"}
     assert {p["familyName"] for p in analysis.creators(rec, roles=("AUTHOR",))} == {"Authorman"}
-    assert {p["familyName"] for p in analysis.creators(rec, roles=None)} == {
-        "Editorson", "Authorman", "Translated",
-    }
+    # role is attached to each returned person
+    by_name = {p["familyName"]: p["role"] for p in analysis.creators(rec)}
+    assert by_name == {"Editorson": "EDITOR", "Authorman": "AUTHOR", "Translated": "TRANSLATOR"}
 
 
 def test_distribution_genre_and_org():

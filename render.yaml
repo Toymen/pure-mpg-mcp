@@ -7,6 +7,7 @@ services:
     runtime: docker
     plan: free
     autoDeploy: true
+    healthCheckPath: /health
     envVars:
       - key: MCP_TRANSPORT
         value: http

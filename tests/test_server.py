@@ -42,38 +42,6 @@ async def test_search_publications_defaults_to_match_all():
     assert mock.call_args.kwargs["query"] == {"match_all": {}}
 
 
-async def test_guide_publication_search_flags_typos_with_all_options():
-    out = await server.guide_publication_search(genre="artcle", export_format="bibtext", statistics_group="langauge")
-    fields = {q["field"]: q for q in out["questions"]}
-    assert fields["genre"]["suggestedValue"] == "ARTICLE"
-    assert fields["genre"]["options"][0] == "all"
-    assert fields["export_format"]["suggestedValue"] == "BibTex"
-    assert fields["export_format"]["options"][0] == "all"
-    assert fields["statistics_group"]["suggestedValue"] == "language"
-    assert out["normalizedArguments"]["genre"] == "ARTICLE"
-    assert out["normalizedArguments"]["export_format"] == "BibTex"
-    assert out["alwaysOfferAll"] is True
-
-
-async def test_guide_publication_search_normalizes_exact_case_without_question():
-    out = await server.guide_publication_search(
-        intent="search",
-        genre="article",
-        review_method="peer",
-        date_field="published_online",
-        citation="apa",
-        enrichment_source="openalex",
-    )
-    assert out["questions"] == []
-    assert out["normalizedArguments"] == {
-        "genre": "ARTICLE",
-        "review_method": "PEER",
-        "date_field": "published_online",
-        "citation": "APA",
-        "enrichment_source": "openalex",
-    }
-
-
 async def test_search_publications_covers_every_advanced_search_field():
     mock = AsyncMock(return_value=_search_payload("item_1"))
     with patch.object(server._client, "search_items", new=mock):
