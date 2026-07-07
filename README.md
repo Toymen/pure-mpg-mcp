@@ -96,6 +96,28 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Windows: powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
+### PyPI package
+
+PyPI hosts the **installable MCP server package**, not a long-running public MCP
+endpoint. For local MCP clients, use the PyPI package directly:
+
+```bash
+uvx pure-mpg-mcp
+```
+
+or pin a specific release:
+
+```bash
+uvx --from pure-mpg-mcp==0.1.3 pure-mpg-mcp
+```
+
+Package page: <https://pypi.org/project/pure-mpg-mcp/>
+
+This is the right setup for Claude Code and Claude Desktop because they can
+start local stdio MCP servers. ChatGPT cannot start a local PyPI package; for
+ChatGPT, deploy the same package as an HTTPS Streamable HTTP server and use the
+public `/mcp` URL.
+
 ### Quick smoke test
 
 Before wiring an MCP client, confirm the package can start:
