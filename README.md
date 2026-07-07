@@ -98,8 +98,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### PyPI package
 
-PyPI hosts the **installable MCP server package**, not a long-running public MCP
-endpoint. For local MCP clients, use the PyPI package directly:
+PyPI is the canonical distribution path for this MCP server. It hosts the
+installable package named `pure-mpg-mcp`; MCP clients then start that package
+locally.
+
+For local MCP setup, there is no separate `<server>` URL or hosted endpoint to
+fill in. The MCP client config should point to the PyPI command:
 
 ```bash
 uvx pure-mpg-mcp
@@ -175,6 +179,10 @@ Use this config:
   }
 }
 ```
+
+`mcpServers` is Claude Desktop's required config object. `pure-mpg` is just the
+local name you give this MCP server inside Claude. The actual server comes from
+PyPI via `uvx pure-mpg-mcp`; no URL is needed for this local setup.
 
 The `env` block is optional. It only enables Unpaywall-backed full-text lookup;
 the PuRe, CONE, OpenAlex, Crossref, and Semantic Scholar features work without
