@@ -76,38 +76,69 @@ Citation counts differ across sources because each indexes a different corpus �
 
 > **Note on analytics.** PuRe's search endpoint strips Elasticsearch aggregations, so `publication_statistics` and `coauthorship_analysis` fetch a capped sample of records (scrolled, default 300–500) and aggregate **client-side**. When `numberOfRecords` exceeds the cap, treat the figures as sample-based, and raise `max_records` if you need more (at the cost of more requests).
 
-## Use with Claude
+## Use with MCP clients
 
-The server is on PyPI, so no cloning or building is needed — clients run it
-on demand with [`uvx`](https://docs.astral.sh/uv/).
+There are two ways to use this server:
 
-**Prerequisite:** install [uv](https://docs.astral.sh/uv/) (provides `uvx`):
+1. **Local stdio**: the MCP client starts `pure-mpg-mcp` on your machine. This
+   is the easiest path for Claude Code and Claude Desktop.
+2. **Remote Streamable HTTP**: the server runs behind HTTPS and clients connect
+   to `https://.../mcp`. This is required for ChatGPT custom apps/connectors and
+   is also useful for Claude web or team-wide installs.
+
+The server is published on PyPI, so most users do not need to clone this repo.
+Clients can run it on demand with [`uvx`](https://docs.astral.sh/uv/).
+
+**Install uv first** (it provides `uvx`):
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh     # macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
 # Windows: powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
+### Quick smoke test
+
+Before wiring an MCP client, confirm the package can start:
+
+```bash
+uvx pure-mpg-mcp
+```
+
+That command starts the stdio MCP server and waits for an MCP client. Stop it
+with `Ctrl+C`. If it downloads and starts without an import error, the package is
+installed correctly.
+
 ### Claude Code
 
-One command:
+Add the local stdio server:
 
 ```bash
 claude mcp add pure-mpg -- uvx pure-mpg-mcp
 ```
 
-To enable the Unpaywall full-text source as well, pass a real contact email:
+To enable the Unpaywall full-text source, pass a real contact email:
 
 ```bash
 claude mcp add pure-mpg -e PURE_CONTACT_EMAIL=you@example.org -- uvx pure-mpg-mcp
 ```
 
+Then start a new Claude Code session and ask something that should require a
+tool call, for example:
+
+> Search PuRe for recent open-access articles about Neanderthals and export the
+> top result as BibTeX.
+
+Claude should discover tools such as `search_publications`,
+`find_by_doi`, `export_publication`, and `publication_statistics`.
+
 ### Claude Desktop
 
-Edit `claude_desktop_config.json` (Settings → Developer → Edit Config, or):
+Edit `claude_desktop_config.json`:
 
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+Use this config:
 
 ```json
 {
@@ -115,62 +146,165 @@ Edit `claude_desktop_config.json` (Settings → Developer → Edit Config, or):
     "pure-mpg": {
       "command": "uvx",
       "args": ["pure-mpg-mcp"],
-      "env": { "PURE_CONTACT_EMAIL": "you@example.org" }
+      "env": {
+        "PURE_CONTACT_EMAIL": "you@example.org"
+      }
     }
   }
 }
 ```
 
-Then **fully quit and reopen** Claude Desktop (closing the window isn't enough).
-The `env` block is optional — it only enables the Unpaywall source.
+The `env` block is optional. It only enables Unpaywall-backed full-text lookup;
+the PuRe, CONE, OpenAlex, Crossref, and Semantic Scholar features work without
+it.
 
-### Remote connector by URL (no local install)
+After editing the file, **fully quit and reopen** Claude Desktop. Closing only
+the window is not enough. In a new chat, ask Claude to search or retrieve a PuRe
+publication and it should offer to use the `pure-mpg` MCP server.
 
-If you can't run it locally, host it once and add it to Claude as a **custom
-connector by URL** — works in Claude Desktop *and* claude.ai (web), on Free/Pro/
-Max/Team/Enterprise. No OAuth is required because the server is public and
-read-only.
+### Claude by remote URL
 
-The same server speaks Streamable HTTP at `/mcp` when `MCP_TRANSPORT=http` is
-set. A [`Dockerfile`](Dockerfile) is included; pick whichever host you like.
+If you cannot run local commands, host this server once and add it to Claude as a
+custom connector by URL. The endpoint is `/mcp` over Streamable HTTP:
 
-**Option A — Render** ([`render.yaml`](render.yaml), one-click):
-go to [render.com](https://render.com) → **New → Blueprint** → pick this repo.
-Render builds the container and your URL is `https://<service>.onrender.com/mcp`.
-(Render auto-sets `RENDER_EXTERNAL_HOSTNAME`, which the server trusts as an
-allowed host. Free tier sleeps after ~15 min idle → slow first request.)
-
-**Option B — self-hosted, fully open source** ([`compose.yaml`](compose.yaml) +
-[`Caddyfile`](Caddyfile)): runs the container behind [Caddy](https://caddyserver.com/)
-(Apache-2.0), which gets HTTPS automatically via Let's Encrypt. Needs any VPS or
-home server and a domain pointing at it:
-
-```bash
-git clone https://github.com/Toymen/pure-mpg-mcp.git && cd pure-mpg-mcp
-cp .env.example .env          # set MCP_DOMAIN to your domain
-docker compose up -d --build  # or: podman-compose up -d --build
+```text
+https://<your-host>/mcp
 ```
 
-URL: `https://<MCP_DOMAIN>/mcp`. Open-source PaaS like [Coolify](https://coolify.io/),
-[Dokku](https://dokku.com/), or [CapRover](https://caprover.com/) work too — they
-build the same `Dockerfile`.
+No OAuth is required because this server is public, read-only, and anonymous.
+In Claude, add a custom connector and choose **Streamable HTTP** as the
+transport.
 
-> **Host allow-list.** The MCP SDK has DNS-rebinding protection that trusts only
-> localhost. The server auto-trusts Render's hostname; on any other host set
-> `MCP_ALLOWED_HOSTS` to your domain (comma-separated). If neither is set,
-> protection is disabled — acceptable here since the server is public, read-only,
-> and unauthenticated.
+### ChatGPT
 
-**Add it in Claude:** Settings → **Connectors** → **Add custom connector** →
-paste the `…/mcp` URL → Transport: **Streamable HTTP** → Add.
+ChatGPT connects to MCP servers as custom apps/connectors over HTTPS. It cannot
+start this package locally with stdio, so deploy the HTTP endpoint first. The
+OpenAI Apps SDK documentation describes the ChatGPT flow as: make the MCP server
+reachable over HTTPS, go to **Settings -> Connectors -> Create**, and enter the
+public `/mcp` URL. See OpenAI's official docs:
 
-### From source (development)
+- [Connect from ChatGPT](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt)
+- [Developer mode and MCP apps in ChatGPT](https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt)
+- [Connectors in ChatGPT](https://help.openai.com/en/articles/11487775-connectors-in-chatgpt)
+
+Steps:
+
+1. Deploy this server with `MCP_TRANSPORT=http`.
+2. Make sure the final URL is HTTPS and ends in `/mcp`.
+3. In ChatGPT, enable developer mode if your plan/workspace requires it.
+4. Go to **Settings -> Connectors -> Create**.
+5. Enter a name such as `PuRe MPG Publications`.
+6. Enter a description such as "Search and analyze public Max Planck Society publications from PuRe/PubMan."
+7. Set the connector URL to `https://<your-host>/mcp`.
+8. Create the connector. ChatGPT should show the tools advertised by the MCP
+   server.
+9. Start a new chat, open the tool/app picker, choose your connector, and ask a
+   PuRe-related question.
+
+Good first prompt:
+
+> Use PuRe MPG Publications to find recent Max Planck open-access articles about
+> quantum materials and summarize the top five results with DOIs.
+
+If ChatGPT cannot create the connector, check that your ChatGPT plan/workspace
+allows custom MCP apps/connectors and that workspace admins have enabled the
+feature.
+
+### Host the HTTP endpoint
+
+The same Python server speaks Streamable HTTP at `/mcp` when
+`MCP_TRANSPORT=http` is set. A [`Dockerfile`](Dockerfile) is included.
+
+**Option A: Render** ([`render.yaml`](render.yaml))
+
+Go to [render.com](https://render.com), choose **New -> Blueprint**, and select
+this repo. Render builds the container and your MCP URL is:
+
+```text
+https://<service>.onrender.com/mcp
+```
+
+Render sets `RENDER_EXTERNAL_HOSTNAME`, which the server trusts as an allowed
+host. Free Render services may sleep after idle periods, so the first request can
+be slow.
+
+**Option B: Docker Compose with Caddy** ([`compose.yaml`](compose.yaml) and
+[`Caddyfile`](Caddyfile))
+
+Use this when you have a VPS or home server and a domain pointing at it:
+
+```bash
+git clone https://github.com/Toymen/pure-mpg-mcp.git
+cd pure-mpg-mcp
+cp .env.example .env
+# edit .env and set MCP_DOMAIN=your.domain.example
+docker compose up -d --build
+```
+
+Your connector URL is:
+
+```text
+https://<MCP_DOMAIN>/mcp
+```
+
+Open-source PaaS options such as [Coolify](https://coolify.io/),
+[Dokku](https://dokku.com/), or [CapRover](https://caprover.com/) can also build
+the same `Dockerfile`.
+
+**Option C: Any container host**
+
+Set these environment variables:
+
+```bash
+MCP_TRANSPORT=http
+HOST=0.0.0.0
+PORT=8000
+MCP_ALLOWED_HOSTS=your.domain.example
+PURE_CONTACT_EMAIL=you@example.org
+```
+
+Expose port `8000` behind HTTPS and route requests to `/mcp`.
+
+> **Host allow-list.** The MCP SDK includes DNS-rebinding protection. On hosts
+> other than Render, set `MCP_ALLOWED_HOSTS` to the public hostname clients will
+> use, without `https://` and without `/mcp`. For multiple hostnames, use a
+> comma-separated list.
+
+### From source
+
+Use this for local development or if you want to test unreleased changes:
 
 ```bash
 git clone https://github.com/Toymen/pure-mpg-mcp.git
 cd pure-mpg-mcp
 uv pip install -e ".[dev]"
+pure-mpg-mcp
 ```
+
+For HTTP mode from source:
+
+```bash
+MCP_TRANSPORT=http PORT=8000 uv run pure-mpg-mcp
+```
+
+Then connect a remote-capable MCP client to:
+
+```text
+http://localhost:8000/mcp
+```
+
+For ChatGPT, use a real HTTPS URL, not `localhost`.
+
+### Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| Client cannot find `uvx` | Install `uv`, then restart the MCP client so it sees the updated `PATH`. |
+| Claude Desktop does not show tools | Fully quit and reopen Claude Desktop, then check the JSON config syntax. |
+| ChatGPT cannot create the connector | Confirm the `/mcp` URL is public HTTPS and your workspace allows custom MCP apps/connectors. |
+| HTTP endpoint returns host/origin errors | Set `MCP_ALLOWED_HOSTS` to the public hostname, for example `mcp.example.org`. |
+| Unpaywall is skipped | Set `PURE_CONTACT_EMAIL` to a real non-example email address. |
+| First remote request is slow | Free hosting tiers may cold-start after idle periods. |
 
 ## Configuration
 
@@ -220,10 +354,12 @@ Versioning and changelogs are automated with
    `pyproject.toml`, `src/pure_mpg_mcp/__init__.py`, and [`server.json`](server.json),
    and updates [`CHANGELOG.md`](CHANGELOG.md)
    ([`.github/workflows/release-please.yml`](.github/workflows/release-please.yml)).
-3. **Merge the release PR** → the tag and GitHub Release are created, and the
-   package is built and pushed to **PyPI** via
+3. **Merge the release PR** → the tag and GitHub Release are created. Publish
+   the tagged release through the **Publish** workflow
+   ([`.github/workflows/publish.yml`](.github/workflows/publish.yml)), which is
+   configured for PyPI
    [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC, no
-   stored token). No manual tagging.
+   stored token).
 
 MCP servers aren't "hosted" on GitHub — GitHub holds the source, PyPI ships the
 package (`uvx pure-mpg-mcp`), and clients launch it locally over stdio. For
@@ -233,8 +369,10 @@ this README verifies ownership. Publish it with the
 [`mcp-publisher`](https://modelcontextprotocol.io/registry/quickstart) CLI once
 a PyPI release exists.
 
-> [`.github/workflows/publish.yml`](.github/workflows/publish.yml) remains as a
-> fallback that publishes any **manually** created GitHub Release.
+The PyPI trusted publisher is configured for
+[`publish.yml`](.github/workflows/publish.yml) with environment `pypi`. The
+workflow can run on a published GitHub Release or manually with a tag ref such
+as `pure-mpg-mcp-v0.1.2`.
 
 ## API reference
 

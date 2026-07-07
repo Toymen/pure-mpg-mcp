@@ -4,7 +4,7 @@ name: Release Please
 #
 # On every push to main, release-please maintains a "release PR" that bumps the
 # version (pyproject.toml, src/pure_mpg_mcp/__init__.py, server.json) and updates
-# CHANGELOG.md. Merging that PR creates the git tag and GitHub Release, which in
+# CHANGELOG.md. Merging that PR creates the git tag and GitHub Release.
 # PyPI publishing is handled by publish.yml, which is the workflow configured as
 # the PyPI Trusted Publisher.
 
