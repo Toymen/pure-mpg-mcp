@@ -5,6 +5,13 @@ maintained automatically by [release-please](https://github.com/googleapis/relea
 from [Conventional Commits](https://www.conventionalcommits.org/); see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [0.1.2](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.1...pure-mpg-mcp-v0.1.2) (2026-07-07)
+
+
+### Features
+
+* add guided PubMan option selection ([ad78dea](https://github.com/Toymen/pure-mpg-mcp/commit/ad78dea38728adad6237a9ae5aa0fed515529e9c))
+
 ## [0.1.1](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.0...pure-mpg-mcp-v0.1.1) (2026-07-07)
 
 
