@@ -8,6 +8,7 @@ visible records are reachable through this client.
 from __future__ import annotations
 
 import os
+import random
 from typing import Any
 
 import httpx
@@ -17,6 +18,8 @@ USER_AGENT = "pure-mpg-mcp/0.1 (+https://github.com/)"
 FEED_ACCEPT = "application/atom+xml, application/rss+xml, application/xml, text/xml, */*"
 MAX_SAFE_SEARCH_PAGE_SIZE = 20_000
 DEFAULT_FETCH_ALL_PAGE_SIZE = 10_000
+DEFAULT_RETRIES = 3
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class PureClient:
@@ -59,6 +62,52 @@ class PureClient:
         resp.raise_for_status()
         return resp
 
+    async def _post_json_with_retries(
+        self,
+        path: str,
+        json_body: Any,
+        *,
+        attempts: int = DEFAULT_RETRIES + 1,
+        base_delay: float = 0.5,
+        **params: Any,
+    ) -> httpx.Response:
+        last_error: httpx.HTTPStatusError | httpx.HTTPError | None = None
+        for attempt in range(attempts):
+            try:
+                return await self._post_json(path, json_body, **params)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code not in RETRYABLE_STATUS_CODES or attempt == attempts - 1:
+                    raise
+                last_error = exc
+                await self._sleep_before_retry(exc.response, attempt, base_delay)
+            except httpx.HTTPError as exc:
+                if attempt == attempts - 1:
+                    raise
+                last_error = exc
+                await self._sleep_before_retry(None, attempt, base_delay)
+        if last_error:
+            raise last_error
+        raise RuntimeError("retry loop exited without response or error")
+
+    @staticmethod
+    async def _sleep_before_retry(
+        response: httpx.Response | None,
+        attempt: int,
+        base_delay: float,
+    ) -> None:
+        import asyncio
+
+        retry_after = response.headers.get("Retry-After") if response is not None else None
+        if retry_after:
+            try:
+                delay = float(retry_after)
+            except ValueError:
+                delay = base_delay * (2 ** attempt)
+        else:
+            delay = base_delay * (2 ** attempt)
+        delay += random.uniform(0, base_delay)
+        await asyncio.sleep(delay)
+
     # --- items -------------------------------------------------------------
 
     async def search_items(
@@ -77,7 +126,7 @@ class PureClient:
             body["sort"] = sort
         if search_after is not None:
             body["search_after"] = search_after
-        resp = await self._post_json("/items/search", body, scroll=scroll, format=format)
+        resp = await self._post_json_with_retries("/items/search", body, scroll=scroll, format=format)
         return resp.json()
 
     async def scroll_items(self, scroll_id: str, format: str | None = None) -> dict[str, Any]:
@@ -116,7 +165,24 @@ class PureClient:
         max_records: int | None = None,
         page_size: int = DEFAULT_FETCH_ALL_PAGE_SIZE,
     ) -> list[dict[str, Any]]:
-        """Fetch records using rate-limited offset (from+size) pagination.
+        """Fetch all matching records into a list.
+
+        For very large result sets prefer `fetch_pages()`, which yields one
+        page at a time and avoids holding 500k+ records in memory.
+        """
+        records: list[dict[str, Any]] = []
+        async for page in self.fetch_pages(query=query, max_records=max_records, page_size=page_size):
+            records.extend(page)
+        return records[:max_records] if max_records is not None else records
+
+    async def fetch_pages(
+        self,
+        query: dict[str, Any],
+        max_records: int | None = None,
+        page_size: int = DEFAULT_FETCH_ALL_PAGE_SIZE,
+        page_delay: float = 0.05,
+    ):
+        """Yield matching records page by page using offset pagination.
 
         Two alternatives were tried and rejected: the PuRe scroll endpoint
         (``/items/search/scroll``) is server-side capped at roughly 1000
@@ -128,33 +194,43 @@ class PureClient:
         this PuRe instance is evidently configured with a much higher limit.
         A brief inter-page delay keeps request rates within polite limits.
 
-        Pass ``max_records=None`` (default) to retrieve every matching record;
-        pass a positive integer to cap the result.
+        Pass ``max_records=None`` (default) to traverse every matching record;
+        pass a positive integer to cap the traversal. Pages are capped at the
+        live-safe size of 20,000 records and item-search calls retry 429/5xx
+        responses with bounded exponential backoff.
         """
         import asyncio
 
         effective_size = min(page_size, MAX_SAFE_SEARCH_PAGE_SIZE)
         if max_records is not None:
             effective_size = min(effective_size, max_records)
+        if effective_size <= 0:
+            return
+
         first = await self.search_items(query=query, size=effective_size, from_=0)
-        records: list[dict[str, Any]] = list(first.get("records", []) or [])
-        total = first.get("numberOfRecords", len(records))
+        batch: list[dict[str, Any]] = list(first.get("records", []) or [])
+        total = first.get("numberOfRecords", len(batch))
         limit = max_records if max_records is not None else total
         target = min(limit, total)
+        yielded = 0
 
-        while len(records) < target:
-            await asyncio.sleep(0.05)
+        if batch:
+            chunk = batch[:target]
+            yielded += len(chunk)
+            yield chunk
+
+        while yielded < target:
+            await asyncio.sleep(page_delay)
             page = await self.search_items(
                 query=query,
-                size=min(effective_size, target - len(records)),
-                from_=len(records),
+                size=min(effective_size, target - yielded),
+                from_=yielded,
             )
             batch = page.get("records", []) or []
             if not batch:
                 break
-            records.extend(batch)
-
-        return records[:max_records] if max_records is not None else records
+            yielded += len(batch)
+            yield batch
 
     async def export_item(
         self,

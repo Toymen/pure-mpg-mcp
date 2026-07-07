@@ -1,8 +1,10 @@
 import json
+import importlib.util
 from pathlib import Path
 
 
 PUBLIC_OPENAPI = Path("openapi/pure-public.openapi.json")
+GENERATOR = Path("scripts/generate_public_openapi.py")
 
 
 def _spec() -> dict:
@@ -45,3 +47,11 @@ def test_public_openapi_documents_real_live_limitations():
     assert paths["/feed/search"]["get"]["x-liveProbe"]["confirmedPublic"] is False
     assert paths["/feed/search"]["get"]["x-liveProbe"]["observedStatus"] == 500
     assert "429" in paths["/items/search"]["post"]["responses"]
+
+
+def test_public_openapi_matches_generator_output():
+    spec = importlib.util.spec_from_file_location("generate_public_openapi", GENERATOR)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert _spec() == module.build_openapi()

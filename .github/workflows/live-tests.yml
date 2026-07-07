@@ -1,0 +1,41 @@
+name: Live API Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_limit:
+        description: "Also run public API limit probes"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+  schedule:
+    - cron: "17 4 * * 1"
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install
+        run: uv sync --extra dev
+      - name: Live smoke tests
+        run: uv run pytest -m "network and not limit" -q
+
+  live-limits:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_limit == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      PURE_RUN_LIMIT_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install
+        run: uv sync --extra dev
+      - name: Live limit probes
+        run: uv run pytest -m "network and limit" -q

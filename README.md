@@ -196,14 +196,17 @@ then `export_publication(item_id, format="BibTex")`.
 uv pip install -e ".[dev]"
 ruff check .
 pytest -m "not network"   # offline unit tests (what CI runs)
-pytest                     # include live API smoke tests (network)
+pytest -m "network and not limit"  # live API smoke tests
+PURE_RUN_LIMIT_TESTS=1 pytest -m "network and limit"  # explicit boundary probes
 ```
 
-Tests are split with a `network` marker: offline tests cover all the pure
-aggregation/parsing logic and run in CI; network-marked tests hit the live
-public APIs and are skipped in CI so the suite never depends on third-party
-uptime or rate limits. GitHub Actions runs lint + offline tests on Python 3.10
-and 3.12 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+Tests are split with `network` and `limit` markers: offline tests cover all the
+pure aggregation/parsing logic and run in CI; `network and not limit` checks hit
+live public APIs at low volume; `network and limit` probes rate limits and large
+result-window boundaries and requires `PURE_RUN_LIMIT_TESTS=1`. GitHub Actions
+runs lint + offline tests on Python 3.10 and 3.12
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Live smoke tests run
+in a separate scheduled/manual workflow; limit probes are manual-only.
 
 ## Releases & publishing
 

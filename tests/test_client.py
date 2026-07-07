@@ -6,6 +6,7 @@ These hit the network. Run only the offline tests with:
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from pure_mpg_mcp.client import PureClient
@@ -117,6 +118,69 @@ async def test_fetch_all_caps_page_size_to_live_safe_limit():
 
     assert result == page["records"]
     assert mock.call_args.kwargs["size"] == 20_000
+    await client.aclose()
+
+
+async def test_fetch_pages_yields_without_accumulating_everything():
+    client = PureClient()
+    recs = [{"data": {"objectId": f"item_{i}"}} for i in range(5)]
+
+    async def search_items(query, size, from_):
+        return {"numberOfRecords": len(recs), "records": recs[from_:from_ + size]}
+
+    with (
+        patch.object(client, "search_items", new=search_items),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        pages = [page async for page in client.fetch_pages({"match_all": {}}, page_size=2)]
+
+    assert [[r["data"]["objectId"] for r in page] for page in pages] == [
+        ["item_0", "item_1"],
+        ["item_2", "item_3"],
+        ["item_4"],
+    ]
+    await client.aclose()
+
+
+async def test_search_items_retries_retryable_http_errors():
+    client = PureClient(base_url="https://pure.test/rest")
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, text="slow down", request=request)
+        return httpx.Response(200, json={"numberOfRecords": 0, "records": []}, request=request)
+
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        base_url="https://pure.test/rest",
+        headers={"Accept": "application/json"},
+    )
+    with patch.object(client, "_sleep_before_retry", new=AsyncMock()) as sleep:
+        out = await client.search_items({"match_all": {}}, size=0)
+
+    assert out["numberOfRecords"] == 0
+    assert calls == 2
+    sleep.assert_awaited_once()
+    await client.aclose()
+
+
+async def test_search_items_does_not_retry_bad_requests():
+    client = PureClient(base_url="https://pure.test/rest")
+
+    def handler(request):
+        return httpx.Response(400, text="bad request", request=request)
+
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://pure.test/rest")
+    with (
+        pytest.raises(httpx.HTTPStatusError),
+        patch.object(client, "_sleep_before_retry", new=AsyncMock()) as sleep,
+    ):
+        await client.search_items({"match_all": {}}, size=0)
+
+    sleep.assert_not_awaited()
     await client.aclose()
 
 

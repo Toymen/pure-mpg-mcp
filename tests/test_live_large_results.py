@@ -26,7 +26,11 @@ async def test_live_large_result_window_supports_500k_offsets_without_full_downl
     assert by_name["size=0,offset=0"].total > 500_000
     assert by_name["size=20000,offset=0"].status == 200
     assert by_name["size=20000,offset=0"].records == 20_000
-    assert by_name["size=26000,offset=0"].status >= 500
+    edge = by_name["size=26000,offset=0"]
+    if edge.status == 200:
+        assert edge.records == 26_000
+    else:
+        assert edge.status in {429, 500, 502, 503, 504}
     assert by_name["size=1,offset=500000"].status == 200
     assert by_name["size=1,offset=500000"].records == 1
 

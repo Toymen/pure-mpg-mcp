@@ -55,5 +55,6 @@ feat!: rename analyze_authors output fields
 uv pip install -e ".[dev]"
 ruff check .
 pytest -m "not network"   # offline unit tests (what CI runs)
-pytest                     # include live API smoke tests
+pytest -m "network and not limit"  # live smoke tests
+PURE_RUN_LIMIT_TESTS=1 pytest -m "network and limit"  # explicit limit probes
 ```
