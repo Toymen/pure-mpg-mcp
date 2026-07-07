@@ -38,8 +38,10 @@ def summarize_item(record: dict[str, Any]) -> dict[str, Any]:
             {
                 "componentId": comp.get("objectId"),
                 "name": fmd.get("title") or fmd.get("name"),
-                "mimeType": fmd.get("mimeType"),
-                "visibility": fmd.get("visibility"),
+                "mimeType": comp.get("mimeType") or fmd.get("mimeType"),
+                "visibility": comp.get("visibility") or fmd.get("visibility"),
+                "oaStatus": comp.get("oaStatus") or fmd.get("oaStatus"),
+                "storage": comp.get("storage"),
             }
         )
     return {

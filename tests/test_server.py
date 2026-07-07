@@ -25,9 +25,14 @@ async def test_search_publications_builds_filtered_query():
     query = mock.call_args.kwargs["query"]
     must = query["bool"]["must"]
     assert {"simple_query_string": {"query": "graphene"}} in must
-    assert {"match": {"metadata.creators.person.familyName": "Planck"}} in must
+    assert {
+        "multi_match": {
+            "query": "Planck",
+            "fields": ["metadata.creators.person.familyName", "metadata.creators.person.givenName"],
+        }
+    } in must
     assert {"term": {"metadata.genre": "ARTICLE"}} in must
-    assert any("range" in clause for clause in must)
+    assert any("bool" in clause and "should" in clause.get("bool", {}) for clause in must)
 
 
 async def test_search_publications_defaults_to_match_all():
@@ -35,6 +40,78 @@ async def test_search_publications_defaults_to_match_all():
     with patch.object(server._client, "search_items", new=mock):
         await server.search_publications()
     assert mock.call_args.kwargs["query"] == {"match_all": {}}
+
+
+async def test_search_publications_covers_every_advanced_search_field():
+    mock = AsyncMock(return_value=_search_payload("item_1"))
+    with patch.object(server._client, "search_items", new=mock):
+        await server.search_publications(
+            title="Eigenvalue Outliers",
+            keyword="Stochastic processes",  # Schlagwörter
+            classification="Physics",  # Klassifikation
+            fulltext="graphene",  # Volltext
+            orcid="https://orcid.org/0000-0001-5849-8751",
+            organization="ou_2117288",
+            review_method="PEER",
+            language="eng",
+            source="Physical Review Letters",
+            identifier="10.1103/PhysRevLett.117.224101",
+            local_tag="Department1",
+            collection="ctx_28054",
+            project="Horizon Europe",
+            event="ICML",
+            date_from="2020", date_to="2021", date_field="published_online",
+        )
+    must = mock.call_args.kwargs["query"]["bool"]["must"]
+    assert {"match": {"metadata.title": "Eigenvalue Outliers"}} in must
+    assert {"match": {"metadata.freeKeywords": "Stochastic processes"}} in must
+    assert {"match": {"metadata.subjects.value": "Physics"}} in must
+    assert {"match": {"metadata.creators.person.orcid": "0000-0001-5849-8751"}} in must
+    assert {"term": {"metadata.reviewMethod": "PEER"}} in must
+    assert {"term": {"metadata.languages": "eng"}} in must
+    assert {"match": {"metadata.sources.title": "Physical Review Letters"}} in must
+    assert {"match": {"localTags": "Department1"}} in must
+    assert {"term": {"context.objectId": "ctx_28054"}} in must
+    assert {"match": {"metadata.event.title": "ICML"}} in must
+    assert {"range": {"metadata.datePublishedOnline": {"gte": "2020||/y", "lte": "2021||/y", "format": "yyyy"}}} in must
+
+    org_clause = next(c for c in must if "bool" in c and "should" in c["bool"] and c["bool"]["should"][0] == {
+        "term": {"metadata.creators.person.organizations.identifier": "ou_2117288"}
+    })
+    assert org_clause is not None
+
+    fulltext_clause = next(c for c in must if "simple_query_string" in c and c["simple_query_string"]["query"] == "graphene")
+    assert "fulltext" in fulltext_clause["simple_query_string"]["fields"]
+
+    identifier_clause = next(c for c in must if "bool" in c and any(
+        s.get("term", {}).get("metadata.identifiers.id.keyword") == "10.1103/PhysRevLett.117.224101"
+        for s in c["bool"]["should"]
+    ))
+    assert identifier_clause is not None
+
+    project_clause = next(c for c in must if "bool" in c and any(
+        "projectInfo" in str(s) for s in c["bool"]["should"]
+    ))
+    assert project_clause is not None
+
+
+async def test_search_publications_organization_name_falls_back_to_match():
+    mock = AsyncMock(return_value=_search_payload())
+    with patch.object(server._client, "search_items", new=mock):
+        await server.search_publications(organization="Max Planck Institute for the Physics of Complex Systems")
+    must = mock.call_args.kwargs["query"]["bool"]["must"]
+    assert {
+        "match": {
+            "metadata.creators.person.organizations.name": "Max Planck Institute for the Physics of Complex Systems"
+        }
+    } in must
+
+
+async def test_search_publications_rejects_unknown_date_field():
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown date_field"):
+        await server.search_publications(date_from="2020", date_field="bogus")
 
 
 async def test_search_raw_passes_query_through():
@@ -46,7 +123,7 @@ async def test_search_raw_passes_query_through():
     assert out["items"][0]["itemId"] == "item_2"
 
 
-async def test_get_publication_and_export_and_file_metadata():
+async def test_get_publication_export_and_file_metadata():
     with (
         patch.object(server._client, "get_item", new=AsyncMock(return_value={"objectId": "item_3"})),
         patch.object(server._client, "export_item", new=AsyncMock(return_value="@article{...}")),
@@ -54,7 +131,20 @@ async def test_get_publication_and_export_and_file_metadata():
     ):
         assert (await server.get_publication("item_3"))["objectId"] == "item_3"
         assert (await server.export_publication("item_3")).startswith("@article")
-        assert await server.get_file_metadata("item_3", "comp_1") == {"f": 1}
+        out = await server.get_file_metadata("item_3", "comp_1")
+    assert out["f"] == 1
+    assert out["contentUrl"].endswith("/items/item_3/component/comp_1/content")
+    assert out["thumbnailUrl"].endswith("/items/item_3/component/comp_1/thumbnail")
+
+
+async def test_export_search_results_defaults_and_overrides():
+    mock = AsyncMock(return_value="@article{a}\n@article{b}")
+    with patch.object(server._client, "export_search", new=mock):
+        out = await server.export_search_results(format="BibTex", size=50)
+    assert out.startswith("@article")
+    assert mock.call_args.kwargs["query"] == {"match_all": {}}
+    assert mock.call_args.kwargs["format"] == "BibTex"
+    assert mock.call_args.kwargs["size"] == 50
 
 
 async def test_org_collection_feed_and_info_tools():
@@ -77,6 +167,33 @@ async def test_org_collection_feed_and_info_tools():
         assert await server.recent_publications() == "<rss/>"
         assert await server.open_access_feed() == "<oa/>"
         assert await server.service_info() == {"status": "ok"}
+
+
+async def test_organization_tree_navigation():
+    with (
+        patch.object(server._client, "get_ou", new=AsyncMock(return_value={"objectId": "ou_1"})),
+        patch.object(server._client, "ous_firstlevel", new=AsyncMock(return_value=[{"objectId": "ou_2"}])),
+        patch.object(server._client, "ou_children", new=AsyncMock(return_value=[{"objectId": "ou_3"}])),
+        patch.object(server._client, "ou_id_path", new=AsyncMock(return_value=["ou_3", "ou_1"])),
+        patch.object(server._client, "ou_name_path", new=AsyncMock(return_value=["Dept", "Institute"])),
+    ):
+        assert (await server.get_organization("ou_1"))["objectId"] == "ou_1"
+        assert (await server.list_first_level_organizations())[0]["objectId"] == "ou_2"
+        assert (await server.organization_children("ou_3"))[0]["objectId"] == "ou_3"
+        hierarchy = await server.organization_hierarchy("ou_3")
+    assert hierarchy == {"ouId": "ou_3", "idPath": ["ou_3", "ou_1"], "namePath": ["Dept", "Institute"]}
+
+
+async def test_get_collection_and_extra_feeds():
+    with (
+        patch.object(server._client, "get_context", new=AsyncMock(return_value={"objectId": "ctx_1"})),
+        patch.object(server._client, "feed_organization", new=AsyncMock(return_value="<rss>ou</rss>")),
+        patch.object(server._client, "feed_search", new=AsyncMock(return_value="<rss>q</rss>")) as fs,
+    ):
+        assert (await server.get_collection("ctx_1"))["objectId"] == "ctx_1"
+        assert await server.organization_feed("ou_1") == "<rss>ou</rss>"
+        assert await server.search_feed("graphene") == "<rss>q</rss>"
+    fs.assert_awaited_once_with("graphene")
 
 
 async def test_find_by_doi_summarizes():
@@ -107,18 +224,32 @@ async def test_author_publications_paths():
     assert "error" in await server.author_publications()
 
 
-def _dated_record(date: str) -> dict:
-    return {"numberOfRecords": 1, "records": [{"data": {"metadata": {"datePublishedInPrint": date}}}]}
+def _dated_record(field: str, date: str) -> dict:
+    return {"numberOfRecords": 1, "records": [{"data": {"metadata": {field: date}}}]}
+
+
+def _year_of_filter(query: dict) -> str:
+    """Extract the queried year from a _date_clause filter (bool/should of ranges)."""
+    filt = query["bool"]["filter"][0]
+    clause = filt["bool"]["should"][0] if "bool" in filt else filt
+    return next(iter(clause["range"].values()))["gte"][:4]
 
 
 async def test_publication_statistics_year_counts_each_year():
     counts = {"2019": 2, "2020": 0, "2021": 5}
 
     async def count_items(query):
-        rng = query["bool"]["filter"][0]["range"]["metadata.datePublishedInPrint"]
-        return counts[rng["gte"][:4]]
+        return counts[_year_of_filter(query)]
 
-    search = AsyncMock(side_effect=[_dated_record("2019-03-01"), _dated_record("2021-11-30")])
+    # bounds order: print-asc, print-desc, online-asc, online-desc
+    search = AsyncMock(
+        side_effect=[
+            _dated_record("metadata.datePublishedInPrint", "2019-03-01"),
+            _dated_record("metadata.datePublishedInPrint", "2020-01-01"),
+            _dated_record("metadata.datePublishedOnline", "2020-06-01"),
+            _dated_record("metadata.datePublishedOnline", "2021-11-30"),
+        ]
+    )
     with (
         patch.object(server._client, "search_items", new=search),
         patch.object(server._client, "count_items", new=AsyncMock(side_effect=count_items)),
@@ -131,7 +262,7 @@ async def test_publication_statistics_year_counts_each_year():
 async def test_publication_statistics_year_fallback_when_no_dates():
     empty = {"numberOfRecords": 0, "records": []}
     with (
-        patch.object(server._client, "search_items", new=AsyncMock(side_effect=[empty, empty])),
+        patch.object(server._client, "search_items", new=AsyncMock(side_effect=[empty, empty, empty, empty])),
         patch.object(server._client, "count_items", new=AsyncMock(return_value=0)),
     ):
         out = await server.publication_statistics(group_by="year")
@@ -144,23 +275,72 @@ async def test_publication_statistics_genre_and_language():
         val = next(iter(clause.values()))
         return {"ARTICLE": 7, "BOOK": 3, "eng": 9, "deu": 4}.get(val, 0)
 
-    with patch.object(server._client, "count_items", new=AsyncMock(side_effect=count_items)):
+    cone_langs = AsyncMock(return_value=[{"id": "eng", "value": "English"}, {"id": "deu", "value": "German"}])
+    with (
+        patch.object(server._client, "count_items", new=AsyncMock(side_effect=count_items)),
+        patch.object(server._cone, "languages", new=cone_langs),
+    ):
         genres = await server.publication_statistics(group_by="genre")
         langs = await server.publication_statistics(group_by="language")
     assert genres["buckets"] == [{"key": "ARTICLE", "count": 7}, {"key": "BOOK", "count": 3}]
     assert genres["totalMatchingRecords"] == 10
     assert langs["buckets"] == [{"key": "eng", "count": 9}, {"key": "deu", "count": 4}]
+    cone_langs.assert_awaited_once()
+    # the full JSON-model vocabularies are used, not a truncated subset
+    assert "PREPRINT" in server._GENRES and "REVIEW_ARTICLE" in server._GENRES
+    assert len(server._GENRES) == 49
 
 
-async def test_publication_statistics_open_access():
+async def test_language_codes_falls_back_when_cone_unreachable():
+    with patch.object(server._cone, "languages", new=AsyncMock(side_effect=RuntimeError("down"))):
+        codes = await server._language_codes()
+    assert codes == server._LANGUAGES
+
+
+async def test_language_codes_falls_back_on_empty_cone_response():
+    with patch.object(server._cone, "languages", new=AsyncMock(return_value=[])):
+        codes = await server._language_codes()
+    assert codes == server._LANGUAGES
+
+
+async def test_language_codes_uses_live_cone_vocabulary():
+    entries = [{"id": "eng", "value": "English"}, {"id": "deu", "value": "German"}, {"id": "", "value": "empty"}]
+    with patch.object(server._cone, "languages", new=AsyncMock(return_value=entries)):
+        codes = await server._language_codes()
+    assert codes == ["deu", "eng"]
+
+
+async def test_list_languages_tool():
+    entries = [{"id": "eng", "value": "English"}]
+    with patch.object(server._cone, "languages", new=AsyncMock(return_value=entries)):
+        out = await server.list_languages()
+    assert out == {"languages": entries}
+
+
+async def test_publication_statistics_open_access_excludes_closed_locators():
     async def count_items(query):
-        # the OA sub-query wraps the base in bool/filter; the total does not
-        return 40 if "bool" in query and query["bool"].get("filter") else 100
+        if isinstance(query, dict) and query.get("bool", {}).get("filter"):
+            filt = query["bool"]["filter"][0]
+            assert filt["bool"]["must"] == [{"term": {"files.visibility": "PUBLIC"}}]
+            assert filt["bool"]["must_not"] == [{"term": {"files.oaStatus": "CLOSED_ACCESS"}}]
+            return 40
+        return 100
 
     with patch.object(server._client, "count_items", new=AsyncMock(side_effect=count_items)):
         out = await server.publication_statistics(group_by="open_access")
     assert out["totalMatchingRecords"] == 100
     assert out["buckets"] == [{"key": "open_access", "count": 40}, {"key": "closed", "count": 60}]
+
+
+async def test_publication_statistics_oa_status_breakdown():
+    async def count_items(query):
+        val = query["bool"]["filter"][0]["term"]["files.oaStatus"]
+        return {"GOLD": 5, "GREEN": 3, "CLOSED_ACCESS": 12}.get(val, 0)
+
+    with patch.object(server._client, "count_items", new=AsyncMock(side_effect=count_items)):
+        out = await server.publication_statistics(group_by="oa_status")
+    assert out["buckets"][0] == {"key": "CLOSED_ACCESS", "count": 12}
+    assert {"key": "GOLD", "count": 5} in out["buckets"]
 
 
 def _record_with_creators(*orgs: str) -> dict:

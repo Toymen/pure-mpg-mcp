@@ -80,6 +80,33 @@ async def test_fetch_all_with_cap():
     await client.aclose()
 
 
+async def test_fetch_all_pages_past_ten_thousand_records():
+    """Offset pagination has no artificial ceiling (verified live past 500k historically)."""
+    client = PureClient()
+    total = 12_000
+    calls = 0
+
+    async def search_items(query, size, from_):
+        nonlocal calls
+        calls += 1
+        remaining = total - from_
+        batch = min(size, remaining)
+        return {
+            "numberOfRecords": total,
+            "records": [{"data": {"objectId": f"item_{from_ + i}"}} for i in range(batch)],
+        }
+
+    with (
+        patch.object(client, "search_items", new=search_items),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        result = await client.fetch_all({"match_all": {}}, max_records=None, page_size=1000)
+
+    assert len(result) == total
+    assert calls == 12
+    await client.aclose()
+
+
 def test_is_open_access_uses_comp_visibility():
     """OA check reads visibility from the component root, not component.metadata."""
     from pure_mpg_mcp.analysis import is_open_access

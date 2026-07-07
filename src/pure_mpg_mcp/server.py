@@ -38,18 +38,73 @@ _enrich = Enrichment()
 
 _STATS_CONCURRENCY = 8  # max parallel count requests
 
+# Complete genre vocabulary from the PubMan JSON model.
 _GENRES = [
-    "ARTICLE", "BOOK", "BOOK_ITEM", "CONFERENCE_PAPER", "DATA_PUBLICATION",
-    "DATASET", "FILM", "MANUAL", "MONOGRAPH", "OTHER", "PAPER", "PATENT",
-    "POSTER", "PROCEEDINGS", "REPORT", "SOFTWARE", "TALK_AT_EVENT", "THESIS",
-    "COURSEWARE_LECTURE",
+    "ARTICLE", "BLOG_POST", "BOOK", "BOOK_ITEM", "BOOK_REVIEW", "CASE_NOTE",
+    "CASE_STUDY", "COLLECTED_EDITION", "COMMENTARY", "CONFERENCE_PAPER",
+    "CONFERENCE_REPORT", "CONTRIBUTION_TO_COLLECTED_EDITION",
+    "CONTRIBUTION_TO_COMMENTARY", "CONTRIBUTION_TO_ENCYCLOPEDIA",
+    "CONTRIBUTION_TO_FESTSCHRIFT", "CONTRIBUTION_TO_HANDBOOK",
+    "COURSEWARE_LECTURE", "DATA_PUBLICATION", "EDITORIAL", "ENCYCLOPEDIA",
+    "FESTSCHRIFT", "FILM", "HANDBOOK", "INTERVIEW", "ISSUE", "JOURNAL",
+    "MAGAZINE_ARTICLE", "MANUAL", "MANUSCRIPT", "MEETING_ABSTRACT",
+    "MONOGRAPH", "MULTI_VOLUME", "NEWSPAPER", "NEWSPAPER_ARTICLE", "OPINION",
+    "OTHER", "PAPER", "PATENT", "POSTER", "PREPRINT",
+    "PRE_REGISTRATION_PAPER", "PROCEEDINGS", "REGISTERED_REPORT", "REPORT",
+    "REVIEW_ARTICLE", "SERIES", "SOFTWARE", "TALK_AT_EVENT", "THESIS",
 ]
 
 _LANGUAGES = [
-    "ara", "cat", "ces", "dan", "deu", "ell", "eng", "fin", "fra", "heb",
-    "hun", "ita", "jpn", "kor", "lat", "nld", "nor", "pol", "por", "rus",
-    "spa", "swe", "tur", "vie", "zho",
+    "afr", "ara", "aze", "bel", "bos", "bul", "cat", "ces", "cym", "dan",
+    "deu", "ell", "eng", "est", "eus", "fas", "fin", "fra", "gle", "glg",
+    "heb", "hin", "hrv", "hun", "hye", "ind", "isl", "ita", "jpn", "kat",
+    "kor", "lat", "lav", "lit", "mkd", "mlt", "msa", "nld", "nor", "pol",
+    "por", "ron", "rus", "slk", "slv", "spa", "srp", "swe", "tha", "tur",
+    "ukr", "urd", "vie", "zho",
 ]
+
+_OA_STATUSES = ["GOLD", "GREEN", "HYBRID", "MISCELLANEOUS", "NOT_SPECIFIED", "CLOSED_ACCESS"]
+
+_DATE_PUBLISHED = ["metadata.datePublishedInPrint", "metadata.datePublishedOnline"]
+
+# Date criteria of the PubMan advanced search, mapped to index fields.
+_DATE_FIELDS: dict[str, list[str]] = {
+    "any": [
+        "metadata.datePublishedInPrint", "metadata.datePublishedOnline",
+        "metadata.dateAccepted", "metadata.dateSubmitted",
+        "metadata.dateModified", "metadata.dateCreated",
+    ],
+    "published_in_print": ["metadata.datePublishedInPrint"],
+    "published_online": ["metadata.datePublishedOnline"],
+    "accepted": ["metadata.dateAccepted"],
+    "submitted": ["metadata.dateSubmitted"],
+    "modified": ["metadata.dateModified"],
+    "created": ["metadata.dateCreated"],
+    "modified_internal": ["lastModificationDate"],
+    "created_internal": ["creationDate"],
+    "event_start": ["metadata.event.startDate"],
+    "event_end": ["metadata.event.endDate"],
+}
+
+
+def _range_for(field: str, gte: str | None, lte: str | None) -> dict[str, Any]:
+    """Build a range clause; bare years are matched as whole years."""
+    rng: dict[str, Any] = {}
+    if gte:
+        rng["gte"] = f"{gte}||/y" if len(gte) == 4 and gte.isdigit() else gte
+    if lte:
+        rng["lte"] = f"{lte}||/y" if len(lte) == 4 and lte.isdigit() else lte
+    if all(len(v) == 4 and v.isdigit() for v in (gte, lte) if v):
+        rng["format"] = "yyyy"
+    return {"range": {field: rng}}
+
+
+def _date_clause(fields: list[str], gte: str | None, lte: str | None) -> dict[str, Any]:
+    """Match a date range on any of `fields` (a record matches if one field is in range)."""
+    clauses = [_range_for(f, gte, lte) for f in fields]
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"bool": {"should": clauses, "minimum_should_match": 1}}
 
 
 async def _count_subquery(base: dict[str, Any], filter_clause: dict[str, Any]) -> int:
@@ -70,6 +125,24 @@ async def _gather_counts(
     return list(await asyncio.gather(*[_one(k, c) for k, c in items]))
 
 
+async def _language_codes() -> list[str]:
+    """ISO 639-3 codes to check for `publication_statistics(group_by="language")`.
+
+    Sourced live from the CONE authority vocabulary — the authoritative list
+    of languages PubMan actually accepts, so it can't drift out of date the
+    way a hand-maintained list can. Falls back to the static `_LANGUAGES`
+    list if CONE (a separate service from the main REST API) is unreachable.
+    """
+    try:
+        entries = await _cone.languages()
+        codes = sorted({e["id"] for e in entries if e.get("id")})
+        if codes:
+            return codes
+    except Exception:  # noqa: BLE001 — CONE is best-effort here; the static list is the fallback
+        pass
+    return _LANGUAGES
+
+
 async def _doi_for(item_id: str | None, doi: str | None) -> tuple[str | None, dict[str, Any] | None]:
     """Resolve a DOI plus the canonical PuRe item, keeping PuRe as the spine.
 
@@ -83,49 +156,186 @@ async def _doi_for(item_id: str | None, doi: str | None) -> tuple[str | None, di
     return doi, None
 
 
+def _build_search_query(  # noqa: C901 — one clause per search criterion
+    text: str | None = None,
+    title: str | None = None,
+    keyword: str | None = None,
+    classification: str | None = None,
+    fulltext: str | None = None,
+    author: str | None = None,
+    orcid: str | None = None,
+    organization: str | None = None,
+    genre: str | None = None,
+    review_method: str | None = None,
+    language: str | None = None,
+    source: str | None = None,
+    identifier: str | None = None,
+    local_tag: str | None = None,
+    collection: str | None = None,
+    project: str | None = None,
+    event: str | None = None,
+    year: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    date_field: str = "any",
+) -> dict[str, Any]:
+    """Translate the PubMan advanced-search criteria into an ES bool query."""
+    must: list[dict[str, Any]] = []
+    if text:  # "Alle Felder" — all indexed fields
+        must.append({"simple_query_string": {"query": text}})
+    if title:  # "Titel"
+        must.append({"match": {"metadata.title": title}})
+    if keyword:  # "Schlagwörter"
+        must.append({"match": {"metadata.freeKeywords": keyword}})
+    if classification:  # "Klassifikation" — controlled subjects
+        must.append({"match": {"metadata.subjects.value": classification}})
+    if fulltext:  # "Volltext" — text extracted from attached files
+        must.append(
+            {
+                "simple_query_string": {
+                    "query": fulltext,
+                    "fields": ["fulltext", "fulltexts", "fileData.content", "files.fileData.content"],
+                    "lenient": True,
+                }
+            }
+        )
+    if author:  # "Urheber" — family or given name
+        must.append(
+            {
+                "multi_match": {
+                    "query": author,
+                    "fields": [
+                        "metadata.creators.person.familyName",
+                        "metadata.creators.person.givenName",
+                    ],
+                }
+            }
+        )
+    if orcid:  # bare id or orcid.org URL
+        must.append({"match": {"metadata.creators.person.orcid": orcid.rstrip("/").split("/")[-1]}})
+    if organization:  # "Organisation" — OU id (incl. sub-units via identifierPath) or name
+        if organization.startswith("ou_"):
+            must.append(
+                {
+                    "bool": {
+                        "should": [
+                            {"term": {"metadata.creators.person.organizations.identifier": organization}},
+                            {"term": {"metadata.creators.person.organizations.identifierPath": organization}},
+                        ],
+                        "minimum_should_match": 1,
+                    }
+                }
+            )
+        else:
+            must.append({"match": {"metadata.creators.person.organizations.name": organization}})
+    if genre:
+        must.append({"term": {"metadata.genre": genre.upper()}})
+    if review_method:  # "Begutachtung" — PEER, INTERNAL, NO_REVIEW
+        must.append({"term": {"metadata.reviewMethod": review_method.upper()}})
+    if language:  # ISO 639-3 code, e.g. "eng", "deu"
+        must.append({"term": {"metadata.languages": language}})
+    if source:  # "Quelle" / "Zeitschrift" — journal, book, or proceedings title
+        must.append({"match": {"metadata.sources.title": source}})
+    if identifier:  # "Identifikatoren" — DOI, ISBN, ISSN, arXiv, PMID, …
+        must.append(
+            {
+                "bool": {
+                    "should": [
+                        {"term": {"metadata.identifiers.id.keyword": identifier}},
+                        {"match_phrase": {"metadata.identifiers.id": identifier}},
+                        {"match_phrase": {"metadata.sources.identifiers.id": identifier}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
+    if local_tag:  # "Lokale Tags"
+        must.append({"match": {"localTags": local_tag}})
+    if collection:  # "Kontext" — context id like ctx_123456
+        must.append({"term": {"context.objectId": collection}})
+    if project:  # "Projekt-Information" — title, grant id, funder, or program
+        must.append(
+            {
+                "bool": {
+                    "should": [
+                        {"match": {"metadata.projectInfo.title": project}},
+                        {"match": {"metadata.projectInfo.grantIdentifier": project}},
+                        {"match": {"metadata.projectInfo.fundingInfo.fundingOrganization.title": project}},
+                        {"match": {"metadata.projectInfo.fundingInfo.fundingProgram.title": project}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
+    if event:  # "Titel der Veranstaltung"
+        must.append({"match": {"metadata.event.title": event}})
+    if year:
+        must.append(_date_clause(_DATE_PUBLISHED, str(year), str(year)))
+    if date_from or date_to:
+        fields = _DATE_FIELDS.get(date_field)
+        if fields is None:
+            raise ValueError(f"unknown date_field: {date_field!r} (one of {sorted(_DATE_FIELDS)})")
+        must.append(_date_clause(fields, date_from, date_to))
+    return {"bool": {"must": must}} if must else {"match_all": {}}
+
+
 @mcp.tool()
 async def search_publications(
     text: str | None = None,
+    title: str | None = None,
+    keyword: str | None = None,
+    classification: str | None = None,
+    fulltext: str | None = None,
     author: str | None = None,
+    orcid: str | None = None,
+    organization: str | None = None,
     genre: str | None = None,
+    review_method: str | None = None,
+    language: str | None = None,
+    source: str | None = None,
+    identifier: str | None = None,
+    local_tag: str | None = None,
+    collection: str | None = None,
+    project: str | None = None,
+    event: str | None = None,
     year: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    date_field: str = "any",
     size: int = 10,
     offset: int = 0,
     full_records: bool = False,
 ) -> dict[str, Any]:
-    """Search Max Planck publications in PuRe.
+    """Search Max Planck publications in PuRe (all advanced-search criteria).
 
-    Builds an Elasticsearch query from simple filters. Use `text` for a
-    free-text search across title/abstract/fulltext, `author` for a creator
-    family name, `genre` for publication type (e.g. ARTICLE, BOOK, CONFERENCE_PAPER),
-    and `year` for the publication year. Returns compact summaries by default;
-    set `full_records=True` for raw PuRe records.
+    Every filter of the PuRe advanced search is available; combine freely
+    (all conditions must match):
+      `text` all fields | `title` | `keyword` (Schlagwörter/freeKeywords) |
+      `classification` (controlled subjects) | `fulltext` (attached file text) |
+      `author` (creator name) | `orcid` | `organization` (name, or an ou_… id —
+      ids also match publications of all sub-units) | `genre` (e.g. ARTICLE,
+      PREPRINT, THESIS) | `review_method` (PEER/INTERNAL/NO_REVIEW) |
+      `language` (ISO 639-3, e.g. eng) | `source` (journal/book title) |
+      `identifier` (DOI, ISBN, arXiv, …) | `local_tag` | `collection` (ctx_… id) |
+      `project` (project/funding info) | `event` (event title).
 
-    Returns numberOfRecords plus a list of items (itemId, title, creators, doi, files).
-    Fetch full metadata for a hit with `get_publication(itemId)`.
+    Dates: `year` matches the publication year (print or online). For other
+    ranges use `date_from`/`date_to` (YYYY or YYYY-MM-DD) with `date_field`:
+    any, published_in_print, published_online, accepted, submitted, modified,
+    created, modified_internal, created_internal, event_start, event_end.
+
+    Returns numberOfRecords plus compact item summaries (set
+    `full_records=True` for raw records). Fetch full metadata for a hit with
+    `get_publication(itemId)`.
     """
-    must: list[dict[str, Any]] = []
-    if text:
-        must.append({"simple_query_string": {"query": text}})
-    if author:
-        must.append(
-            {"match": {"metadata.creators.person.familyName": author}}
-        )
-    if genre:
-        must.append({"term": {"metadata.genre": genre}})
-    if year:
-        must.append(
-            {
-                "range": {
-                    "metadata.datePublishedInPrint": {
-                        "gte": f"{year}||/y",
-                        "lte": f"{year}||/y",
-                        "format": "yyyy",
-                    }
-                }
-            }
-        )
-    query: dict[str, Any] = {"bool": {"must": must}} if must else {"match_all": {}}
+    query = _build_search_query(
+        text=text, title=title, keyword=keyword, classification=classification,
+        fulltext=fulltext, author=author, orcid=orcid, organization=organization,
+        genre=genre, review_method=review_method, language=language, source=source,
+        identifier=identifier, local_tag=local_tag, collection=collection,
+        project=project, event=event, year=year,
+        date_from=date_from, date_to=date_to, date_field=date_field,
+    )
     payload = await _client.search_items(query=query, size=size, from_=offset)
     return summarize_search(payload, include_raw=full_records)
 
@@ -175,14 +385,44 @@ async def export_publication(
 
 
 @mcp.tool()
+async def export_search_results(
+    query: dict[str, Any] | None = None,
+    format: str = "BibTex",
+    citation: str | None = None,
+    csl_cone_id: str | None = None,
+    size: int = 100,
+    offset: int = 0,
+    sort: list[dict[str, Any]] | None = None,
+) -> str:
+    """Export a whole set of search results in one call (bulk citation export).
+
+    Avoids calling `export_publication` once per hit. `query` is an
+    Elasticsearch query DSL object (default: all records). `format` may be
+    e.g. BibTex, ENDNOTE, MARC_XML, JSON_CITATION, ESCIDOC_SNIPPET, PDF, DOCX.
+    For formatted citations pass a citation-expecting format with `citation`
+    set to a style (e.g. "APA") and optionally `csl_cone_id`. The PuRe API
+    caps a single export at 5000 records — page with `size`/`offset` beyond
+    that. Returns the raw exported text.
+    """
+    q = query or {"match_all": {}}
+    return await _client.export_search(
+        query=q, format=format, citation=citation, csl_cone_id=csl_cone_id,
+        size=size, from_=offset, sort=sort,
+    )
+
+
+@mcp.tool()
 async def get_file_metadata(item_id: str, component_id: str) -> dict[str, Any]:
-    """Get metadata for a file (component) attached to a publication.
+    """Get metadata for a file (component) attached to a publication, plus its URLs.
 
     `component_id` comes from the `files[].componentId` of a publication.
-    The downloadable content lives at
-    {base}/items/{item_id}/component/{component_id}/content when visibility is PUBLIC.
+    `contentUrl`/`thumbnailUrl` are reachable anonymously when the file's
+    visibility is PUBLIC.
     """
-    return await _client.get_component_metadata(item_id, component_id)
+    meta = await _client.get_component_metadata(item_id, component_id)
+    meta["contentUrl"] = _client.component_content_url(item_id, component_id)
+    meta["thumbnailUrl"] = _client.component_thumbnail_url(item_id, component_id)
+    return meta
 
 
 @mcp.tool()
@@ -199,9 +439,38 @@ async def search_organizations(name: str | None = None, size: int = 10, offset: 
 
 
 @mcp.tool()
+async def get_organization(ou_id: str) -> dict[str, Any]:
+    """Get one Max Planck organizational unit by id (e.g. "ou_1234567")."""
+    return await _client.get_ou(ou_id)
+
+
+@mcp.tool()
 async def list_top_organizations() -> dict[str, Any]:
     """List the top-level (root) Max Planck organizational units."""
     return await _client.ous_toplevel()
+
+
+@mcp.tool()
+async def list_first_level_organizations() -> dict[str, Any]:
+    """List the first-level Max Planck organizational units (below the roots)."""
+    return await _client.ous_firstlevel()
+
+
+@mcp.tool()
+async def organization_children(ou_id: str) -> Any:
+    """List the direct child organizational units of an OU (e.g. departments of an institute)."""
+    return await _client.ou_children(ou_id)
+
+
+@mcp.tool()
+async def organization_hierarchy(ou_id: str) -> dict[str, Any]:
+    """Get the ancestor path of an OU, from itself up to the root institute.
+
+    Useful to resolve which institute a department or sub-unit belongs to.
+    Returns both the id path and the human-readable name path.
+    """
+    ids, names = await asyncio.gather(_client.ou_id_path(ou_id), _client.ou_name_path(ou_id))
+    return {"ouId": ou_id, "idPath": ids, "namePath": names}
 
 
 @mcp.tool()
@@ -214,6 +483,12 @@ async def search_collections(name: str | None = None, size: int = 10, offset: in
 
 
 @mcp.tool()
+async def get_collection(context_id: str) -> dict[str, Any]:
+    """Get one PuRe context (collection) by id (e.g. "ctx_123456")."""
+    return await _client.get_context(context_id)
+
+
+@mcp.tool()
 async def recent_publications() -> str:
     """Get the feed of recently released publications (RSS/Atom XML)."""
     return await _client.feed_recent()
@@ -223,6 +498,22 @@ async def recent_publications() -> str:
 async def open_access_feed() -> str:
     """Get the feed of recent open-access publications (RSS/Atom XML)."""
     return await _client.feed_open_access()
+
+
+@mcp.tool()
+async def organization_feed(ou_id: str) -> str:
+    """Get the feed of recent releases for one organizational unit (RSS/Atom XML)."""
+    return await _client.feed_organization(ou_id)
+
+
+@mcp.tool()
+async def search_feed(query_text: str) -> str:
+    """Run a free-text search and get the results as an RSS/Atom feed.
+
+    `query_text` is the PuRe search-box query string (same syntax as the
+    PubMan UI search box), not an Elasticsearch DSL object.
+    """
+    return await _client.feed_search(query_text)
 
 
 @mcp.tool()
@@ -265,6 +556,18 @@ async def resolve_author(name: str | None = None, person_id: str | None = None, 
 
 
 @mcp.tool()
+async def list_languages() -> dict[str, Any]:
+    """List every ISO 639-3 language code PubMan accepts, from the CONE authority.
+
+    Each entry has `id` (the code to pass as `search_publications(language=...)`
+    or `publication_statistics` groups by) and `value` (its display name). This
+    is the authoritative source `publication_statistics(group_by="language")`
+    itself queries against.
+    """
+    return {"languages": await _cone.languages()}
+
+
+@mcp.tool()
 async def author_publications(
     name: str | None = None,
     person_id: str | None = None,
@@ -287,7 +590,7 @@ async def author_publications(
         return {"error": "provide either name or person_id"}
     payload = await _client.search_items(
         query=query, size=size, from_=offset,
-        sort=[{"metadata.datePublishedInPrint": {"order": "desc"}}],
+        sort=[{f: {"order": "desc", "missing": "_last"}} for f in _DATE_PUBLISHED],
     )
     return summarize_search(payload)
 
@@ -307,37 +610,49 @@ async def publication_statistics(
     """Compute distributions over a set of publications.
 
     `group_by` is one of: "year", "genre", "language", "open_access",
+    "oa_status" (GOLD/GREEN/HYBRID/MISCELLANEOUS/NOT_SPECIFIED/CLOSED_ACCESS),
     "organization". `query` is an Elasticsearch query DSL object (default: all
     records).
 
-    For "year", "genre", "language", and "open_access" the counts are derived
-    from concurrent count sub-queries (size=0) — no records are fetched, so
-    results are exact regardless of dataset size. For "organization", records
-    are fetched (all by default; cap with `max_records`).
+    For "year" (bracketed across print and online publication dates), "genre",
+    "language" (codes sourced live from the CONE authority; see `list_languages`),
+    "open_access", and "oa_status" the counts are derived from concurrent count
+    sub-queries (size=0) — no records are fetched, so results are exact
+    regardless of dataset size. For "organization", records are fetched (all
+    by default; cap with `max_records`).
     """
     q = query or {"match_all": {}}
 
     if group_by == "year":
-        has_date = {"exists": {"field": "metadata.datePublishedInPrint"}}
-        dated_q = {"bool": {"must": [q], "filter": [has_date]}}
-        oldest, newest = await asyncio.gather(
-            _client.search_items(query=dated_q, size=1, sort=[{"metadata.datePublishedInPrint": {"order": "asc"}}]),
-            _client.search_items(query=dated_q, size=1, sort=[{"metadata.datePublishedInPrint": {"order": "desc"}}]),
+        # A publication's year may only be recorded online (preprints, recent
+        # articles ahead of print) — bracket the range across both date fields.
+        bounds = await asyncio.gather(
+            *[
+                _client.search_items(
+                    query={"bool": {"must": [q], "filter": [{"exists": {"field": f}}]}},
+                    size=1, sort=[{f: {"order": order}}],
+                )
+                for f in _DATE_PUBLISHED
+                for order in ("asc", "desc")
+            ]
         )
 
-        def _yr(resp: dict[str, Any], fallback: int) -> int:
+        def _yr(resp: dict[str, Any], field: str) -> int | None:
             recs = resp.get("records") or []
             if not recs:
-                return fallback
-            val = str(((recs[0].get("data") or recs[0]).get("metadata") or {}).get("datePublishedInPrint") or "")
-            return int(val[:4]) if len(val) >= 4 and val[:4].isdigit() else fallback
+                return None
+            val = str(((recs[0].get("data") or recs[0]).get("metadata") or {}).get(field) or "")
+            return int(val[:4]) if len(val) >= 4 and val[:4].isdigit() else None
 
-        min_year = max(_yr(oldest, 1900), 1800)
-        max_year = _yr(newest, datetime.now().year)
+        years = [
+            y
+            for resp, field in zip(bounds, [f for f in _DATE_PUBLISHED for _ in (0, 1)])
+            if (y := _yr(resp, field)) is not None
+        ]
+        min_year = max(min(years, default=1900), 1800)
+        max_year = max(years, default=datetime.now().year)
         year_clauses = [
-            (str(yr), {"range": {"metadata.datePublishedInPrint": {
-                "gte": f"{yr}||/y", "lte": f"{yr}||/y", "format": "yyyy",
-            }}})
+            (str(yr), _date_clause(_DATE_PUBLISHED, str(yr), str(yr)))
             for yr in range(min_year, max_year + 1)
         ]
         raw = await _gather_counts(q, year_clauses)
@@ -360,7 +675,8 @@ async def publication_statistics(
         }
 
     elif group_by == "language":
-        raw = await _gather_counts(q, [(lang, {"term": {"metadata.languages": lang}}) for lang in _LANGUAGES])
+        codes = await _language_codes()
+        raw = await _gather_counts(q, [(lang, {"term": {"metadata.languages": lang}}) for lang in codes])
         buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
         return {
             "groupBy": group_by,
@@ -370,9 +686,17 @@ async def publication_statistics(
         }
 
     elif group_by == "open_access":
+        # A public file whose oaStatus is explicitly CLOSED_ACCESS is a locator
+        # pointing at a paywalled page, not an open-access copy.
+        oa_filter = {
+            "bool": {
+                "must": [{"term": {"files.visibility": "PUBLIC"}}],
+                "must_not": [{"term": {"files.oaStatus": "CLOSED_ACCESS"}}],
+            }
+        }
         total, oa = await asyncio.gather(
             _client.count_items(q),
-            _count_subquery(q, {"term": {"files.visibility": "PUBLIC"}}),
+            _count_subquery(q, oa_filter),
         )
         return {
             "groupBy": group_by,
@@ -381,6 +705,16 @@ async def publication_statistics(
                 {"key": "open_access", "count": oa},
                 {"key": "closed", "count": max(0, total - oa)},
             ],
+            "note": "exact counts via targeted sub-queries",
+        }
+
+    elif group_by == "oa_status":
+        raw = await _gather_counts(q, [(s, {"term": {"files.oaStatus": s}}) for s in _OA_STATUSES])
+        buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
+        return {
+            "groupBy": group_by,
+            "totalMatchingRecords": sum(b["count"] for b in buckets),
+            "buckets": buckets,
             "note": "exact counts via targeted sub-queries",
         }
 
@@ -445,7 +779,7 @@ async def analyze_authors(
                 "familyName": person.get("familyName"),
                 "firstName": analysis.clean_given_name(person.get("givenName")),
                 "personId": cone_id.rstrip("/").split("/")[-1] if cone_id else None,
-                "orcid": None,
+                "orcid": person.get("orcid"),
                 "affiliation": None,
             }
             for org in person.get("organizations", []) or []:
@@ -456,7 +790,7 @@ async def analyze_authors(
                 try:
                     resolved = await _cone.resolve_person(cone_id)
                     entry["firstName"] = analysis.clean_given_name(resolved.get("givenName"))
-                    entry["orcid"] = resolved.get("orcid")
+                    entry["orcid"] = entry["orcid"] or resolved.get("orcid")
                     entry["affiliation"] = entry["affiliation"] or resolved.get("affiliation")
                 except Exception:  # noqa: BLE001 — authority lookups are best-effort
                     pass
