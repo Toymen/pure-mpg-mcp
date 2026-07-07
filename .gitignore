@@ -14,3 +14,4 @@ build/
 # generated
 .coverage
 uv.lock
+.idea
