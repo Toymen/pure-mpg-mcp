@@ -125,6 +125,24 @@ async def _gather_counts(
     return list(await asyncio.gather(*[_one(k, c) for k, c in items]))
 
 
+async def _language_codes() -> list[str]:
+    """ISO 639-3 codes to check for `publication_statistics(group_by="language")`.
+
+    Sourced live from the CONE authority vocabulary — the authoritative list
+    of languages PubMan actually accepts, so it can't drift out of date the
+    way a hand-maintained list can. Falls back to the static `_LANGUAGES`
+    list if CONE (a separate service from the main REST API) is unreachable.
+    """
+    try:
+        entries = await _cone.languages()
+        codes = sorted({e["id"] for e in entries if e.get("id")})
+        if codes:
+            return codes
+    except Exception:  # noqa: BLE001 — CONE is best-effort here; the static list is the fallback
+        pass
+    return _LANGUAGES
+
+
 async def _doi_for(item_id: str | None, doi: str | None) -> tuple[str | None, dict[str, Any] | None]:
     """Resolve a DOI plus the canonical PuRe item, keeping PuRe as the spine.
 
@@ -538,6 +556,18 @@ async def resolve_author(name: str | None = None, person_id: str | None = None, 
 
 
 @mcp.tool()
+async def list_languages() -> dict[str, Any]:
+    """List every ISO 639-3 language code PubMan accepts, from the CONE authority.
+
+    Each entry has `id` (the code to pass as `search_publications(language=...)`
+    or `publication_statistics` groups by) and `value` (its display name). This
+    is the authoritative source `publication_statistics(group_by="language")`
+    itself queries against.
+    """
+    return {"languages": await _cone.languages()}
+
+
+@mcp.tool()
 async def author_publications(
     name: str | None = None,
     person_id: str | None = None,
@@ -585,11 +615,11 @@ async def publication_statistics(
     records).
 
     For "year" (bracketed across print and online publication dates), "genre",
-    "language", "open_access", and "oa_status" the counts are derived from
-    concurrent count sub-queries (size=0) — no records are fetched, so results
-    are exact regardless of dataset size. For "organization", records are
-    fetched (all by default; cap with `max_records`; retrieval is capped at
-    10,000 matching records, an Elasticsearch limit).
+    "language" (codes sourced live from the CONE authority; see `list_languages`),
+    "open_access", and "oa_status" the counts are derived from concurrent count
+    sub-queries (size=0) — no records are fetched, so results are exact
+    regardless of dataset size. For "organization", records are fetched (all
+    by default; cap with `max_records`).
     """
     q = query or {"match_all": {}}
 
@@ -645,7 +675,8 @@ async def publication_statistics(
         }
 
     elif group_by == "language":
-        raw = await _gather_counts(q, [(lang, {"term": {"metadata.languages": lang}}) for lang in _LANGUAGES])
+        codes = await _language_codes()
+        raw = await _gather_counts(q, [(lang, {"term": {"metadata.languages": lang}}) for lang in codes])
         buckets = sorted([{"key": k, "count": v} for k, v in raw if v > 0], key=lambda b: -b["count"])
         return {
             "groupBy": group_by,

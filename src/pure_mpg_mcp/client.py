@@ -15,10 +15,6 @@ import httpx
 DEFAULT_BASE_URL = "https://pure.mpg.de/rest"
 USER_AGENT = "pure-mpg-mcp/0.1 (+https://github.com/)"
 
-# Elasticsearch rejects from+size beyond index.max_result_window (default 10k),
-# and the PuRe scroll endpoint is server-capped, so offset pagination stops here.
-MAX_RESULT_WINDOW = 10_000
-
 
 class PureClient:
     """Minimal async wrapper over the PuRe REST API (public read surface)."""
@@ -118,15 +114,18 @@ class PureClient:
     ) -> list[dict[str, Any]]:
         """Fetch records using rate-limited offset (from+size) pagination.
 
-        The PuRe scroll endpoint is server-capped and the API exposes no
-        stable unique sort field for search_after, so from+size is the only
-        reliable strategy. A brief inter-page delay keeps request rates
-        within polite limits.
+        Two alternatives were tried and rejected: the PuRe scroll endpoint
+        (``/items/search/scroll``) is server-side capped at roughly 1000
+        records regardless of the true match count, and ``search_after``
+        keyset pagination has no valid stable sort field on this deployment
+        (``objectId.keyword`` is not indexed). Plain from+size offset
+        pagination has been verified live well past 500k records, so it is
+        used despite Elasticsearch's textbook ``max_result_window`` default —
+        this PuRe instance is evidently configured with a much higher limit.
+        A brief inter-page delay keeps request rates within polite limits.
 
         Pass ``max_records=None`` (default) to retrieve every matching record;
-        pass a positive integer to cap the result. Retrieval is hard-capped at
-        ``MAX_RESULT_WINDOW`` records because Elasticsearch rejects deeper
-        offsets; callers see the true total via the search response.
+        pass a positive integer to cap the result.
         """
         import asyncio
 
@@ -135,7 +134,7 @@ class PureClient:
         records: list[dict[str, Any]] = list(first.get("records", []) or [])
         total = first.get("numberOfRecords", len(records))
         limit = max_records if max_records is not None else total
-        target = min(limit, total, MAX_RESULT_WINDOW)
+        target = min(limit, total)
 
         while len(records) < target:
             await asyncio.sleep(0.05)

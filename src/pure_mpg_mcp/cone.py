@@ -72,6 +72,19 @@ class ConeClient:
         raw = resp.json()
         return self._clean_person(pid, raw)
 
+    async def languages(self) -> list[dict[str, str]]:
+        """The full ISO 639-3 language vocabulary CONE serves, as [{id, value}, ...].
+
+        The authoritative source for `metadata.languages` values — covers
+        every language PubMan accepts, unlike any list maintained by hand.
+        """
+        resp = await self._client.get("/iso639-3/all", params={"format": "json"})
+        resp.raise_for_status()
+        try:
+            return resp.json()
+        except ValueError:
+            return []
+
     @staticmethod
     def _clean_person(pid: str, raw: dict[str, Any]) -> dict[str, Any]:
         given = family = title = affiliation = orcid = None

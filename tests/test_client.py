@@ -80,20 +80,30 @@ async def test_fetch_all_with_cap():
     await client.aclose()
 
 
-async def test_fetch_all_stops_at_elasticsearch_result_window():
-    """fetch_all(max_records=None) never pages past the ES from+size ceiling."""
-    from pure_mpg_mcp.client import MAX_RESULT_WINDOW
-
+async def test_fetch_all_pages_past_ten_thousand_records():
+    """Offset pagination has no artificial ceiling (verified live past 500k historically)."""
     client = PureClient()
-    page = {"numberOfRecords": MAX_RESULT_WINDOW + 5_000, "records": [{"data": {"objectId": "x"}}] * 100}
+    total = 12_000
+    calls = 0
+
+    async def search_items(query, size, from_):
+        nonlocal calls
+        calls += 1
+        remaining = total - from_
+        batch = min(size, remaining)
+        return {
+            "numberOfRecords": total,
+            "records": [{"data": {"objectId": f"item_{from_ + i}"}} for i in range(batch)],
+        }
 
     with (
-        patch.object(client, "search_items", new=AsyncMock(return_value=page)),
+        patch.object(client, "search_items", new=search_items),
         patch("asyncio.sleep", new=AsyncMock()),
     ):
-        result = await client.fetch_all({"match_all": {}}, max_records=None, page_size=100)
+        result = await client.fetch_all({"match_all": {}}, max_records=None, page_size=1000)
 
-    assert len(result) == MAX_RESULT_WINDOW
+    assert len(result) == total
+    assert calls == 12
     await client.aclose()
 
 

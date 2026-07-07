@@ -47,6 +47,7 @@ It lets any MCP client (Claude Desktop, Claude Code, etc.) search and retrieve M
 | --- | --- |
 | `resolve_author` | Resolve a name/person-id against the CONE authority → full name, affiliation, ORCID. Expands initials. |
 | `author_publications` | List an author's publications (by CONE id or family name) |
+| `list_languages` | Full ISO 639-3 language vocabulary from the CONE authority (id + display name) |
 | `publication_statistics` | Distributions over a result set: by `year`, `genre`, `language`, `organization`, `open_access`, or `oa_status` (gold/green/hybrid/…) |
 | `coauthorship_analysis` | Collaboration patterns: avg team size, solo-authored count, top co-authors & institutions (authors and editors) |
 | `analyze_authors` | Extract & enrich authors of a publication/query — full names (initials expanded via CONE), ORCID (inline or CONE), affiliation |

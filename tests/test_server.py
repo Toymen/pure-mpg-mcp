@@ -275,15 +275,46 @@ async def test_publication_statistics_genre_and_language():
         val = next(iter(clause.values()))
         return {"ARTICLE": 7, "BOOK": 3, "eng": 9, "deu": 4}.get(val, 0)
 
-    with patch.object(server._client, "count_items", new=AsyncMock(side_effect=count_items)):
+    cone_langs = AsyncMock(return_value=[{"id": "eng", "value": "English"}, {"id": "deu", "value": "German"}])
+    with (
+        patch.object(server._client, "count_items", new=AsyncMock(side_effect=count_items)),
+        patch.object(server._cone, "languages", new=cone_langs),
+    ):
         genres = await server.publication_statistics(group_by="genre")
         langs = await server.publication_statistics(group_by="language")
     assert genres["buckets"] == [{"key": "ARTICLE", "count": 7}, {"key": "BOOK", "count": 3}]
     assert genres["totalMatchingRecords"] == 10
     assert langs["buckets"] == [{"key": "eng", "count": 9}, {"key": "deu", "count": 4}]
+    cone_langs.assert_awaited_once()
     # the full JSON-model vocabularies are used, not a truncated subset
     assert "PREPRINT" in server._GENRES and "REVIEW_ARTICLE" in server._GENRES
     assert len(server._GENRES) == 49
+
+
+async def test_language_codes_falls_back_when_cone_unreachable():
+    with patch.object(server._cone, "languages", new=AsyncMock(side_effect=RuntimeError("down"))):
+        codes = await server._language_codes()
+    assert codes == server._LANGUAGES
+
+
+async def test_language_codes_falls_back_on_empty_cone_response():
+    with patch.object(server._cone, "languages", new=AsyncMock(return_value=[])):
+        codes = await server._language_codes()
+    assert codes == server._LANGUAGES
+
+
+async def test_language_codes_uses_live_cone_vocabulary():
+    entries = [{"id": "eng", "value": "English"}, {"id": "deu", "value": "German"}, {"id": "", "value": "empty"}]
+    with patch.object(server._cone, "languages", new=AsyncMock(return_value=entries)):
+        codes = await server._language_codes()
+    assert codes == ["deu", "eng"]
+
+
+async def test_list_languages_tool():
+    entries = [{"id": "eng", "value": "English"}]
+    with patch.object(server._cone, "languages", new=AsyncMock(return_value=entries)):
+        out = await server.list_languages()
+    assert out == {"languages": entries}
 
 
 async def test_publication_statistics_open_access_excludes_closed_locators():

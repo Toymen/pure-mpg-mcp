@@ -190,6 +190,8 @@ def _cone_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=[{"id": "persons1", "type": "main", "value": "Doe, Jan"}])
     if request.url.path == "/cone/persons/resource/persons1":
         return httpx.Response(200, json=_CONE_PERSON)
+    if request.url.path == "/cone/iso639-3/all":
+        return httpx.Response(200, json=[{"id": "eng", "value": "English"}, {"id": "deu", "value": "German"}])
     return httpx.Response(404)
 
 
@@ -220,6 +222,19 @@ async def test_cone_resolve_person_cleans_record(cone):
     assert out["familyName"] == "Doe"
     assert out["orcid"] == "0000-0001-2345-6789"
     assert out["affiliation"] == "Max Planck Society, Some Institute"
+
+
+async def test_cone_languages(cone):
+    out = await cone.languages()
+    assert {"id": "eng", "value": "English"} in out
+    assert {"id": "deu", "value": "German"} in out
+
+
+async def test_cone_languages_non_json_returns_empty():
+    c = ConeClient(base_url="https://pure.test/cone")
+    _mock(c, lambda request: httpx.Response(200, text="<html/>"), base_url="https://pure.test/cone")
+    async with c:
+        assert await c.languages() == []
 
 
 # --- Enrichment -----------------------------------------------------------
