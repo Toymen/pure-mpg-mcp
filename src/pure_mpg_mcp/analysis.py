@@ -48,11 +48,16 @@ def creators(
     record: dict[str, Any],
     roles: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
-    """Return person creators with their creator `role` attached.
+    """Return every creator (person or organization) with `role`/`type` attached.
 
     Defaults to every role PubMan records (AUTHOR, EDITOR, TRANSLATOR,
     DIRECTOR, REFEREE, INVENTOR, ...) so nothing is silently dropped from
     aggregate views. Pass `roles` to narrow to a subset.
+
+    A creator's `type` is PERSON or ORGANIZATION (a corporate/institutional
+    author — PubMan allows both). Organization creators carry their name in
+    `familyName` (with no `givenName`) so they don't vanish from person-shaped
+    output; callers that only want individuals should filter on `type`.
     """
     out = []
     for c in _md(record).get("creators", []) or []:
@@ -60,7 +65,11 @@ def creators(
             continue
         person = c.get("person")
         if person:
-            out.append({**person, "role": c.get("role")})
+            out.append({**person, "role": c.get("role"), "type": c.get("type", "PERSON")})
+            continue
+        org_name = (c.get("organization") or {}).get("name")
+        if org_name:
+            out.append({"familyName": org_name, "role": c.get("role"), "type": c.get("type", "ORGANIZATION")})
     return out
 
 
@@ -130,7 +139,7 @@ def coauthorship(records: list[dict[str, Any]], top: int = 25) -> dict[str, Any]
         for p in people:
             fam = p.get("familyName")
             giv = p.get("givenName")
-            if fam:
+            if fam and p.get("type") != "ORGANIZATION":
                 authors[f"{fam}, {giv}" if giv else fam] += 1
             for org in p.get("organizations", []) or []:
                 name = org.get("name")

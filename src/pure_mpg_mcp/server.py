@@ -781,8 +781,11 @@ async def analyze_authors(
     `query` (Elasticsearch DSL) for an aggregate over publications. Set
     `max_records` to an integer to limit the sample; the default (null) fetches
     all matching records. Returns every creator regardless of role (AUTHOR,
-    EDITOR, TRANSLATOR, DIRECTOR, REFEREE, INVENTOR, ...) — each entry carries
-    its `role` plus `personId`/`orcid` so grouping, filtering, or dedup by
+    EDITOR, TRANSLATOR, DIRECTOR, REFEREE, INVENTOR, ...) or type — PubMan
+    allows a creator to be a PERSON or an ORGANIZATION (a corporate/
+    institutional author); the latter appear with their name in `familyName`
+    and `type="ORGANIZATION"` rather than being dropped. Each entry also
+    carries `role` plus `personId`/`orcid` so grouping, filtering, or dedup by
     identity is left to the caller instead of being decided here. Also
     returns a summary (distinct authors, distinct institutions, ORCID
     coverage).
@@ -806,6 +809,7 @@ async def analyze_authors(
             entry: dict[str, Any] = {
                 "itemId": rid,
                 "role": person.get("role"),
+                "type": person.get("type"),
                 "familyName": person.get("familyName"),
                 "firstName": analysis.clean_given_name(person.get("givenName")),
                 "personId": cone_id.rstrip("/").split("/")[-1] if cone_id else None,

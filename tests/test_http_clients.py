@@ -6,6 +6,7 @@ JSON decoding, error fallbacks) is exercised without any network.
 """
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -205,12 +206,29 @@ async def test_service_info_empty_json_and_raw_bodies():
         assert raw["raw"] == "plain text"
 
 
-async def test_get_raises_on_http_error():
+async def test_get_retries_5xx_then_raises_after_exhausting_attempts():
+    """GET requests (get_item, feeds, OU lookups, ...) retry 5xx/429 too.
+
+    Retries live in the shared `_send_with_retries` used by both `_get` and
+    `_post_json`, not bolted onto one endpoint — a fresh call always inherits
+    it.
+    """
     c = PureClient(base_url="https://pure.test/rest")
-    _mock(c, lambda request: httpx.Response(500))
-    async with c:
-        with pytest.raises(httpx.HTTPStatusError):
-            await c.get_item("item_1")
+    calls = 0
+
+    def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(500)
+
+    _mock(c, handler)
+    with patch.object(c, "_sleep_before_retry", new=AsyncMock()) as sleep:
+        async with c:
+            with pytest.raises(httpx.HTTPStatusError):
+                await c.get_item("item_1")
+
+    assert calls == 4  # 1 initial attempt + 3 retries (DEFAULT_RETRIES)
+    assert sleep.await_count == 3
 
 
 def test_base_url_env_fallback(monkeypatch):

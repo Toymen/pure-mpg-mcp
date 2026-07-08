@@ -9,21 +9,24 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import analysis
 
-def _creators(md: dict[str, Any]) -> list[str]:
+
+def _creators(record: dict[str, Any]) -> list[str]:
+    """Compact "FamilyName, GivenName" strings for every creator (person or org).
+
+    Delegates to `analysis.creators()` — the single place that knows how to
+    read a PubMan creator entry — rather than re-parsing `metadata.creators`
+    here too.
+    """
     out: list[str] = []
-    for c in md.get("creators", []) or []:
-        person = c.get("person") or {}
+    for person in analysis.creators(record):
         name = person.get("familyName")
         given = person.get("givenName")
         if name and given:
             out.append(f"{name}, {given}")
         elif name:
             out.append(name)
-        else:
-            org = (c.get("organization") or {}).get("name")
-            if org:
-                out.append(org)
     return out
 
 
@@ -47,7 +50,7 @@ def summarize_item(record: dict[str, Any]) -> dict[str, Any]:
     return {
         "itemId": data.get("objectId"),
         "title": md.get("title"),
-        "creators": _creators(md),
+        "creators": _creators(record),
         "genre": md.get("genre"),
         "datePublished": md.get("datePublishedInPrint") or md.get("datePublishedOnline"),
         "doi": _first_identifier(md, "DOI"),

@@ -79,6 +79,41 @@ def test_creators_includes_every_role_by_default():
     assert by_name == {"Editorson": "EDITOR", "Authorman": "AUTHOR", "Translated": "TRANSLATOR"}
 
 
+def test_creators_includes_organization_creators():
+    """PubMan creators can be PERSON or ORGANIZATION (a corporate/institutional author)."""
+    rec = {
+        "data": {
+            "metadata": {
+                "creators": [
+                    {"role": "AUTHOR", "type": "PERSON", "person": {"familyName": "Planck", "givenName": "Max"}},
+                    {"role": "AUTHOR", "type": "ORGANIZATION", "organization": {"name": "Max Planck Society"}},
+                ]
+            }
+        }
+    }
+    people = analysis.creators(rec)
+    assert len(people) == 2
+    org = next(p for p in people if p["type"] == "ORGANIZATION")
+    assert org["familyName"] == "Max Planck Society"
+    assert org.get("givenName") is None
+
+
+def test_coauthorship_excludes_organization_creators_from_top_authors():
+    rec = {
+        "data": {
+            "metadata": {
+                "creators": [
+                    {"type": "PERSON", "person": {"familyName": "Planck", "givenName": "Max"}},
+                    {"type": "ORGANIZATION", "organization": {"name": "Max Planck Society"}},
+                ]
+            }
+        }
+    }
+    c = analysis.coauthorship([rec])
+    assert c["averageAuthorsPerPublication"] == 2.0  # org creator still counts toward team size
+    assert [a["author"] for a in c["topAuthors"]] == ["Planck, Max"]  # but not the person-name leaderboard
+
+
 def test_distribution_genre_and_org():
     d = analysis.distribution([REC], group_by="genre")
     assert d["buckets"][0] == {"key": "ARTICLE", "count": 1}

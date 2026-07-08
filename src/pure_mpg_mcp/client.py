@@ -7,8 +7,10 @@ visible records are reachable through this client.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import random
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -52,59 +54,49 @@ class PureClient:
     async def _get(self, path: str, accept: str | None = None, **params: Any) -> httpx.Response:
         clean = {k: v for k, v in params.items() if v is not None}
         headers = {"Accept": accept} if accept else None
-        resp = await self._client.get(path, params=clean, headers=headers)
-        resp.raise_for_status()
-        return resp
+        return await self._send_with_retries(lambda: self._client.get(path, params=clean, headers=headers))
 
     async def _post_json(self, path: str, json_body: Any, **params: Any) -> httpx.Response:
         clean = {k: v for k, v in params.items() if v is not None}
-        resp = await self._client.post(path, params=clean, json=json_body)
-        resp.raise_for_status()
-        return resp
+        return await self._send_with_retries(lambda: self._client.post(path, params=clean, json=json_body))
 
-    async def _post_json_with_retries(
+    async def _send_with_retries(
         self,
-        path: str,
-        json_body: Any,
+        send: Callable[[], Awaitable[httpx.Response]],
         *,
         attempts: int = DEFAULT_RETRIES + 1,
         base_delay: float = 0.5,
-        **params: Any,
     ) -> httpx.Response:
-        last_error: httpx.HTTPStatusError | httpx.HTTPError | None = None
+        """Issue a request, retrying 429/5xx and network errors with backoff.
+
+        Applies uniformly to every GET/POST this client makes (via `_get` /
+        `_post_json`) so no endpoint has to opt in individually.
+        """
         for attempt in range(attempts):
             try:
-                return await self._post_json(path, json_body, **params)
+                resp = await send()
+                resp.raise_for_status()
+                return resp
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code not in RETRYABLE_STATUS_CODES or attempt == attempts - 1:
                     raise
-                last_error = exc
                 await self._sleep_before_retry(exc.response, attempt, base_delay)
-            except httpx.HTTPError as exc:
+            except httpx.HTTPError:
                 if attempt == attempts - 1:
                     raise
-                last_error = exc
                 await self._sleep_before_retry(None, attempt, base_delay)
-        if last_error:
-            raise last_error
-        raise RuntimeError("retry loop exited without response or error")
+        raise AssertionError("unreachable")  # last attempt always returns or raises above
 
     @staticmethod
-    async def _sleep_before_retry(
-        response: httpx.Response | None,
-        attempt: int,
-        base_delay: float,
-    ) -> None:
-        import asyncio
-
+    async def _sleep_before_retry(response: httpx.Response | None, attempt: int, base_delay: float) -> None:
         retry_after = response.headers.get("Retry-After") if response is not None else None
         if retry_after:
             try:
                 delay = float(retry_after)
             except ValueError:
-                delay = base_delay * (2 ** attempt)
+                delay = base_delay * (2**attempt)
         else:
-            delay = base_delay * (2 ** attempt)
+            delay = base_delay * (2**attempt)
         delay += random.uniform(0, base_delay)
         await asyncio.sleep(delay)
 
@@ -126,7 +118,7 @@ class PureClient:
             body["sort"] = sort
         if search_after is not None:
             body["search_after"] = search_after
-        resp = await self._post_json_with_retries("/items/search", body, scroll=scroll, format=format)
+        resp = await self._post_json("/items/search", body, scroll=scroll, format=format)
         return resp.json()
 
     async def scroll_items(self, scroll_id: str, format: str | None = None) -> dict[str, Any]:
@@ -199,8 +191,6 @@ class PureClient:
         live-safe size of 20,000 records and item-search calls retry 429/5xx
         responses with bounded exponential backoff.
         """
-        import asyncio
-
         effective_size = min(page_size, MAX_SAFE_SEARCH_PAGE_SIZE)
         if max_records is not None:
             effective_size = min(effective_size, max_records)

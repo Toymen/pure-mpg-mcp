@@ -36,6 +36,24 @@ def test_summarize_item_minimal():
     assert out["doi"] == "10.1/x"
 
 
+def test_summarize_item_includes_organization_creators():
+    """PubMan creators can be PERSON or ORGANIZATION (corporate authors) — both must show up."""
+    rec = {
+        "data": {
+            "objectId": "item_2",
+            "metadata": {
+                "title": "A Report",
+                "creators": [
+                    {"type": "PERSON", "person": {"familyName": "Planck", "givenName": "Max"}},
+                    {"type": "ORGANIZATION", "organization": {"name": "Max Planck Society"}},
+                ],
+            },
+        }
+    }
+    out = summarize_item(rec)
+    assert out["creators"] == ["Planck, Max", "Max Planck Society"]
+
+
 def test_summarize_search_shape():
     payload = {"numberOfRecords": 1, "records": [{"data": {"objectId": "item_9"}}]}
     out = summarize_search(payload)
