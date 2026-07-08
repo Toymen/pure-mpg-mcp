@@ -5,6 +5,20 @@ maintained automatically by [release-please](https://github.com/googleapis/relea
 from [Conventional Commits](https://www.conventionalcommits.org/); see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## [0.1.4](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.3...pure-mpg-mcp-v0.1.4) (2026-07-08)
+
+
+### Bug Fixes
+
+* include organization creators in item summaries; unify retry logic for GET/POST ([f0a7c5a](https://github.com/Toymen/pure-mpg-mcp/commit/f0a7c5a7db9d2d6321c2719656e8ad53a17e3ea8))
+* stop dropping non-author/editor creator roles; simplify search/stats code ([2904a63](https://github.com/Toymen/pure-mpg-mcp/commit/2904a633455cdb58af0f422ae157ef08fdad2acf))
+
+
+### Documentation
+
+* clarify pypi based mcp setup ([5009b16](https://github.com/Toymen/pure-mpg-mcp/commit/5009b16f5007414713d30175a2584447d312e43f))
+* clarify pypi mcp package usage ([3459d6b](https://github.com/Toymen/pure-mpg-mcp/commit/3459d6b4bf4009418a1bb556a28ebbac4a3e3bf9))
+
 ## [0.1.3](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.2...pure-mpg-mcp-v0.1.3) (2026-07-07)
 
 
