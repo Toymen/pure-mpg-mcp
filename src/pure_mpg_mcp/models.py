@@ -45,6 +45,8 @@ def summarize_item(record: dict[str, Any]) -> dict[str, Any]:
                 "visibility": comp.get("visibility") or fmd.get("visibility"),
                 "oaStatus": comp.get("oaStatus") or fmd.get("oaStatus"),
                 "storage": comp.get("storage"),
+                "contentCategory": fmd.get("contentCategory"),
+                "content": comp.get("content"),
             }
         )
     return {

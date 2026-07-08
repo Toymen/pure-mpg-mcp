@@ -46,6 +46,25 @@ def test_summarize_item_includes_organization_creators():
     assert out["creators"] == ["Planck, Max", "Max Planck Society"]
 
 
+def test_summarize_item_surfaces_linked_research_data():
+    """Research-data links live as a separate EXTERNAL_URL file component, not a
+    dedicated relation field (PuRe's schema has none) — contentCategory +
+    content must both surface so callers can find them."""
+    rec = {
+        "data": {
+            "objectId": "item_3",
+            "files": [
+                {"objectId": "file_1", "storage": "INTERNAL_MANAGED", "content": "/rest/items/item_3/component/file_1/content", "metadata": {"contentCategory": "publisher-version"}},
+                {"objectId": "file_2", "storage": "EXTERNAL_URL", "content": "https://osf.io/gbsf2/", "metadata": {"contentCategory": "research-data"}},
+            ],
+        }
+    }
+    out = summarize_item(rec)
+    data_file = next(f for f in out["files"] if f["contentCategory"] == "research-data")
+    assert data_file["storage"] == "EXTERNAL_URL"
+    assert data_file["content"] == "https://osf.io/gbsf2/"
+
+
 def test_summarize_search_shape():
     payload = {"numberOfRecords": 1, "records": [{"data": {"objectId": "item_9"}}]}
     out = summarize_search(payload)
