@@ -24,6 +24,8 @@ from typing import Any
 
 import httpx
 
+from . import sources as _sources
+
 SOURCES = ("openalex", "crossref", "unpaywall", "semanticscholar")
 
 # Used only for the OpenAlex/Crossref "polite pool" (a courtesy header, not
@@ -82,99 +84,21 @@ class Enrichment:
         await self._client.aclose()
 
     async def _get_json(self, url: str, **params: Any) -> dict[str, Any] | None:
-        try:
-            resp = await self._client.get(url, params={k: v for k, v in params.items() if v is not None})
-            if resp.status_code == 404:
-                return None
-            resp.raise_for_status()
-            return resp.json()
-        except (httpx.HTTPError, ValueError):
-            return None
+        return await _sources.get_json(self._client, url, **params)
 
     # --- individual sources (all return a trimmed dict or None) -----------
 
     async def openalex(self, doi: str) -> dict[str, Any] | None:
-        d = await self._get_json(
-            f"https://api.openalex.org/works/https://doi.org/{normalize_doi(doi)}",
-            mailto=_polite_email(),
-        )
-        if not d:
-            return None
-        institutions = sorted(
-            {
-                i.get("display_name")
-                for a in (d.get("authorships") or [])
-                for i in (a.get("institutions") or [])
-                if i.get("display_name")
-            }
-        )
-        ror_ids = sorted(
-            {
-                i.get("ror")
-                for a in (d.get("authorships") or [])
-                for i in (a.get("institutions") or [])
-                if i.get("ror")
-            }
-        )
-        return {
-            "openalex_id": d.get("id"),
-            "cited_by_count": d.get("cited_by_count"),
-            "oa_status": (d.get("open_access") or {}).get("oa_status"),
-            "topics": [t.get("display_name") for t in (d.get("topics") or [])[:5]],
-            "institutions": institutions[:10],
-            "ror_ids": ror_ids[:10],
-            "referenced_works_count": len(d.get("referenced_works") or []),
-            "related_works": (d.get("related_works") or [])[:5],
-        }
+        return await _sources.openalex(self._client, normalize_doi(doi), _polite_email())
 
     async def crossref(self, doi: str) -> dict[str, Any] | None:
-        d = await self._get_json(
-            f"https://api.crossref.org/works/{normalize_doi(doi)}", mailto=_polite_email()
-        )
-        if not d or "message" not in d:
-            return None
-        m = d["message"]
-        return {
-            "is_referenced_by_count": m.get("is-referenced-by-count"),
-            "references_count": m.get("references-count"),
-            "funders": [f.get("name") for f in (m.get("funder") or [])],
-            "license": [lic.get("URL") for lic in (m.get("license") or [])],
-            "subjects": m.get("subject") or [],
-            "publisher": m.get("publisher"),
-            "container": (m.get("container-title") or [None])[0],
-        }
+        return await _sources.crossref(self._client, normalize_doi(doi), _polite_email())
 
     async def unpaywall(self, doi: str) -> dict[str, Any] | None:
-        email = contact_email()
-        if email is None:  # Unpaywall requires a real, non-example address
-            return None
-        d = await self._get_json(f"https://api.unpaywall.org/v2/{normalize_doi(doi)}", email=email)
-        if not d:
-            return None
-        loc = d.get("best_oa_location") or {}
-        return {
-            "is_oa": d.get("is_oa"),
-            "oa_status": d.get("oa_status"),
-            "best_oa_url": loc.get("url"),
-            "best_oa_pdf": loc.get("url_for_pdf"),
-            "host_type": loc.get("host_type"),
-            "license": loc.get("license"),
-        }
+        return await _sources.unpaywall(self._client, normalize_doi(doi), contact_email())
 
     async def semanticscholar(self, doi: str) -> dict[str, Any] | None:
-        d = await self._get_json(
-            f"https://api.semanticscholar.org/graph/v1/paper/DOI:{normalize_doi(doi)}",
-            fields="citationCount,influentialCitationCount,tldr,fieldsOfStudy",
-        )
-        if not d:
-            return None
-        tldr = d.get("tldr") or {}
-        return {
-            "citation_count": d.get("citationCount"),
-            "influential_citation_count": d.get("influentialCitationCount"),
-            "fields_of_study": d.get("fieldsOfStudy") or [],
-            "tldr": tldr.get("text"),
-        }
+        return await _sources.semanticscholar(self._client, normalize_doi(doi))
 
     async def fetch(self, doi: str, sources: list[str]) -> dict[str, Any]:
         """Fetch the requested sources for a DOI; missing sources are omitted."""
