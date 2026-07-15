@@ -15,7 +15,7 @@ from pure_mpg_mcp.enrichment import unavailable_sources
 
 from fixtures_live import LIVE_DOI, LIVE_ITEM_ID, assert_feed, identifier_query
 
-pytestmark = [pytest.mark.network, pytest.mark.asyncio(loop_scope="module")]
+pytestmark = [pytest.mark.network, pytest.mark.asyncio(loop_scope="session")]
 
 
 async def test_live_authority_statistics_analysis_and_enrichment_tools():
