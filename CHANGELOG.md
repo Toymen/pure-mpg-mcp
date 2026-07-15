@@ -13,6 +13,42 @@ from [Conventional Commits](https://www.conventionalcommits.org/); see
   ScholeXplorer, DataCite, OpenAIRE, B2FIND, Crossref, Zenodo, Figshare,
   Dryad, and OpenAlex.
 
+## [0.1.5](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.4...pure-mpg-mcp-v0.1.5) (2026-07-15)
+
+
+### Features
+
+* add guided PubMan option selection ([ad78dea](https://github.com/Toymen/pure-mpg-mcp/commit/ad78dea38728adad6237a9ae5aa0fed515529e9c))
+* expose research data discovery tools ([c747567](https://github.com/Toymen/pure-mpg-mcp/commit/c747567d235b3382ca2c24dddcb5dc5a3538c7b2))
+* expose research data discovery tools ([ed682de](https://github.com/Toymen/pure-mpg-mcp/commit/ed682dee79fe0e58ce3c19fa800f019c275b2cb6))
+* fill anonymous API gaps and cover the full advanced-search field set ([2e29013](https://github.com/Toymen/pure-mpg-mcp/commit/2e29013d5229026d338492e60f39fff55d781fde))
+* research-data discovery providers (DOI/ORCID -&gt; datasets) ([dc26592](https://github.com/Toymen/pure-mpg-mcp/commit/dc26592547f95873d5c43265120ee4a175896f94))
+* support remote hosting via Streamable HTTP for a connector URL ([8c4f0b2](https://github.com/Toymen/pure-mpg-mcp/commit/8c4f0b23fa4a2fe8377aa8672dde52d1e383b23a))
+* surface contentCategory and content on file summaries ([9542ba1](https://github.com/Toymen/pure-mpg-mcp/commit/9542ba1a98b56a8d6dc2c72af38c7fa8682545ca))
+
+
+### Bug Fixes
+
+* include organization creators in item summaries; unify retry logic for GET/POST ([f0a7c5a](https://github.com/Toymen/pure-mpg-mcp/commit/f0a7c5a7db9d2d6321c2719656e8ad53a17e3ea8))
+* revert unverified 10k pagination cap; add live CONE language vocabulary ([8209b51](https://github.com/Toymen/pure-mpg-mcp/commit/8209b51a0de322f2266c2ec98547eafe60b06fdf))
+* stop dropping non-author/editor creator roles; simplify search/stats code ([2904a63](https://github.com/Toymen/pure-mpg-mcp/commit/2904a633455cdb58af0f422ae157ef08fdad2acf))
+* switch fetch_all to search_after to bypass 1000-record scroll cap ([74a4094](https://github.com/Toymen/pure-mpg-mcp/commit/74a4094f6a0463db56b800e01ebb359c7c666953))
+* trust deployment host in HTTP mode so remote connector works ([599502f](https://github.com/Toymen/pure-mpg-mcp/commit/599502fa70ea2423cbe399d7a219b1a8b9967f59))
+
+
+### Documentation
+
+* add mcp client setup guide ([bc70f52](https://github.com/Toymen/pure-mpg-mcp/commit/bc70f5231d197eb8ef7e7ca3fd03dc453d196c86))
+* add Use-with-Claude install guide and PyPI badge ([f4a7b68](https://github.com/Toymen/pure-mpg-mcp/commit/f4a7b68cf8d99dca3e2062ec6e4abd7a72a88d4d))
+* clarify pypi based mcp setup ([5009b16](https://github.com/Toymen/pure-mpg-mcp/commit/5009b16f5007414713d30175a2584447d312e43f))
+* clarify pypi mcp package usage ([3459d6b](https://github.com/Toymen/pure-mpg-mcp/commit/3459d6b4bf4009418a1bb556a28ebbac4a3e3bf9))
+* research-data discovery API capabilities (verified live) ([df02bad](https://github.com/Toymen/pure-mpg-mcp/commit/df02bad8ba7523ca45adebeb512cfa087c1e12c3))
+
+
+### Refactoring
+
+* split every file over ~120 lines into focused modules ([3cd2214](https://github.com/Toymen/pure-mpg-mcp/commit/3cd2214caf0d7214bcadd70fab06edaa29a56b98))
+
 ## [0.1.4](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.3...pure-mpg-mcp-v0.1.4) (2026-07-08)
 
 
