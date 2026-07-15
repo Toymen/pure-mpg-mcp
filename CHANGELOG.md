@@ -5,6 +5,14 @@ maintained automatically by [release-please](https://github.com/googleapis/relea
 from [Conventional Commits](https://www.conventionalcommits.org/); see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+### Features
+
+- Add research-data discovery tools for PuRe DOIs and ORCID ids, backed by
+  ScholeXplorer, DataCite, OpenAIRE, B2FIND, Crossref, Zenodo, Figshare,
+  Dryad, and OpenAlex.
+
 ## [0.1.4](https://github.com/Toymen/pure-mpg-mcp/compare/pure-mpg-mcp-v0.1.3...pure-mpg-mcp-v0.1.4) (2026-07-08)
 
 

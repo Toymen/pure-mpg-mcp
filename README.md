@@ -59,6 +59,8 @@ It lets any MCP client (Claude Desktop, Claude Code, etc.) search and retrieve M
 | `enrich_publication` | Attach external signals to a PuRe item: citations, topics, institutions (ROR), funders, license, OA full text. Pick `sources` from `openalex`, `crossref`, `unpaywall`, `semanticscholar` |
 | `get_citation_metrics` | Citation counts for one publication side-by-side across OpenAlex, Crossref, and Semantic Scholar (incl. influential citations) |
 | `find_full_text` | Locate free full text — PuRe's own public files first, then Unpaywall / OpenAlex open-access locations |
+| `find_research_data` | Find datasets linked to a PuRe publication DOI. Uses PuRe `item_id` or a direct DOI, fans out to ScholeXplorer, DataCite, B2FIND, Crossref, Zenodo, Figshare, and Dryad, then deduplicates dataset hits. |
+| `find_research_data_by_orcid` | Find datasets authored by an ORCID via DataCite, OpenAIRE Graph, OpenAlex, Zenodo, and Figshare. |
 
 ### Enrichment sources
 
@@ -73,6 +75,13 @@ All are free and require no authentication. They are queried **only** with an id
 | [Semantic Scholar](https://www.semanticscholar.org) | Influential-citation count, TLDR summary | No key; rate-limited |
 
 Citation counts differ across sources because each indexes a different corpus — that's expected, and why `get_citation_metrics` shows them side by side rather than picking one.
+
+Research-data discovery returns both a merged `datasets` list (`doi`, `title`,
+`publisher`, `year`, `relation`, `sources`) and the original `bySource`
+evidence. Google Dataset Search has no public API, so the research-data tools
+include a prefilled `googleDatasetSearchUrl` instead of scraping the UI. See
+[`docs/research-data-discovery.md`](docs/research-data-discovery.md) for the
+API capability matrix and verified query patterns.
 
 > **Note on analytics.** PuRe's search endpoint strips Elasticsearch aggregations, so `publication_statistics` and `coauthorship_analysis` fetch a capped sample of records (scrolled, default 300–500) and aggregate **client-side**. When `numberOfRecords` exceeds the cap, treat the figures as sample-based, and raise `max_records` if you need more (at the cost of more requests).
 
