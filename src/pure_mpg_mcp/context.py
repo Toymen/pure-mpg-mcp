@@ -13,12 +13,14 @@ from mcp.server.fastmcp import FastMCP
 
 from .client import PureClient
 from .cone import ConeClient
+from .datasets import Datasets
 from .enrichment import Enrichment
 
 mcp = FastMCP("pure-mpg")
 _client = PureClient()
 _cone = ConeClient()
 _enrich = Enrichment()
+_datasets = Datasets()
 
 
 @mcp.custom_route("/health", methods=["GET", "HEAD"])

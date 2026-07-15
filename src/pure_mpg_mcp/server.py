@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from .context import _client, _cone, _enrich, mcp  # noqa: F401 — re-exported for tests
+from .context import _client, _cone, _datasets, _enrich, mcp  # noqa: F401 — re-exported for tests
 from .stats_helpers import _language_codes  # noqa: F401 — re-exported for tests
 from .tools import *  # noqa: F401,F403 — registers every @mcp.tool() and re-exports it
 from .vocab import _GENRES, _LANGUAGES  # noqa: F401 — re-exported for tests

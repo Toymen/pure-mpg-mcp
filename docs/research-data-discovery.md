@@ -6,6 +6,22 @@ whether research data (datasets) exist.
 All findings below were verified with live requests on 2026-07-15.
 All integrated services are free and need no authentication.
 
+## Tool contract
+
+`find_research_data(item_id=..., doi=...)` resolves the DOI from PuRe when an
+`item_id` is provided, then queries every DOI-capable source by default.
+`find_research_data_by_orcid(orcid=...)` accepts bare ORCID ids and
+`https://orcid.org/...` URLs, then queries every ORCID-capable source by
+default.
+
+Both tools return:
+
+- `hasResearchData`: true when at least one dataset hit remains after deduplication.
+- `datasets`: merged hits with `doi`, `title`, `publisher`, `year`, `relation`, and `sources`.
+- `bySource`: original normalized provider results, retained as evidence.
+- `sourcesQueried` / `sourcesReturned`: requested sources vs. reachable sources.
+- `googleDatasetSearchUrl`: prefilled UI search URL, because Google Dataset Search has no public API.
+
 ## Capability matrix
 
 | Service | DOI → datasets | ORCID → datasets | Auth | Rate limit | Verdict |
@@ -20,10 +36,10 @@ All integrated services are free and need no authentication.
 | [Figshare](https://api.figshare.com/v2) | **yes** — `resource_doi` exact match (PLOS supplements) | **yes** — `:orcid:` search operator | none | be polite | **integrated** |
 | [Dryad](https://datadryad.org/api/v2) | **yes** — `q` search, verified via `relatedWorks` | no | none | none observed | **integrated** (DOI only) |
 | [Google Dataset Search](https://datasetsearch.research.google.com) | UI only | UI only | — | — | **no public API** — we return a UI search link |
-| OSF (api.osf.io) | no | no | — | — | skip — no usable lookup in either direction |
-| re3data | n/a (repository registry, not datasets) | n/a | none | — | skip — metadata about repositories only |
-| BASE (base-search.net) | untestable | untestable | **IP whitelist** required | — | skip (whitelisting possible for DE academia) |
-| CORE (api.core.ac.uk) | weak dataset typing | no | anon ok | 10/window | skip |
+| OSF (api.osf.io) | no | no | — | — | skip — `/v2/search/` can find text, but no reliable DOI/ORCID→dataset relation lookup |
+| re3data | n/a (repository registry, not datasets) | n/a | none | — | skip — repository metadata only, no dataset records |
+| BASE (base-search.net) | untestable | untestable | **IP whitelist** required | — | skip — API access requires whitelisting, possible later for DE academia |
+| CORE (api.core.ac.uk) | weak dataset typing | no | anon ok | 10/window | skip — literature-centric API; dataset typing and relation coverage are too weak |
 
 ## How the MCP tools fan out
 
@@ -132,6 +148,22 @@ No public API exists (Google offers none; the service indexes schema.org/Dataset
 markup). The tools return a prefilled UI link instead:
 `https://datasetsearch.research.google.com/search?query={doi or name}`.
 
+## Official references
+
+- [DataCite REST API](https://support.datacite.org/docs/api) and
+  [API query syntax](https://support.datacite.org/docs/api-queries#building-a-query-string)
+- [ScholeXplorer API](https://graph.openaire.eu/docs/apis/scholexplorer/api/)
+  and [ScholeXplorer use case notes](https://graph.openaire.eu/docs/10.0.1/apis/scholexplorer/v3/use_case/)
+- [OpenAIRE Graph API](https://graph.openaire.eu/docs/apis/graph-api/api/)
+- [Zenodo developer documentation](https://developers.zenodo.org/) and
+  [Zenodo search guide](https://help.zenodo.org/guides/search/)
+- [Figshare API documentation](https://docs.figshare.com/)
+- [Dryad API](https://datadryad.org/api) and
+  [Dryad search guide](https://datadryad.org/help/guides/search)
+- [OpenAlex API documentation](https://docs.openalex.org/)
+- [Crossref REST API](https://api.crossref.org/swagger-ui/index.html)
+- [Google Dataset Search](https://datasetsearch.research.google.com/)
+
 ## Notes
 
 - DOI coverage differs per source: ScholeXplorer aggregates DataCite + Crossref +
@@ -140,3 +172,6 @@ markup). The tools return a prefilled UI link instead:
   identifiers (DOI/ORCID), so language is irrelevant here.
 - ORCID is accepted bare (`0000-0003-1419-2405`) or as URL; providers get the
   form they index.
+- `openapi/pure-public.openapi.json` documents PuRe's anonymous REST endpoints
+  only. Research-data discovery is MCP-level enrichment and is documented here
+  plus in the README tool table.

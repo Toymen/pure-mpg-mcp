@@ -16,6 +16,7 @@ from .collections_feeds import (
     search_feed,
     service_info,
 )
+from .datasets import find_research_data, find_research_data_by_orcid
 from .enrichment import enrich_publication, get_citation_metrics
 from .export import export_publication, export_search_results, get_file_metadata
 from .fulltext import find_full_text
@@ -60,5 +61,7 @@ __all__ = [
     "analyze_authors",
     "enrich_publication",
     "get_citation_metrics",
+    "find_research_data",
+    "find_research_data_by_orcid",
     "find_full_text",
 ]

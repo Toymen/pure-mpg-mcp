@@ -98,3 +98,34 @@ async def test_datacite_by_orcid_live():
         assert all(h["doi"] for h in hits)
     finally:
         await d.aclose()
+
+
+@pytest.mark.network
+async def test_datacite_by_doi_live_finds_supplement():
+    d = Datasets()
+    try:
+        hits = await d.datacite_by_doi("10.1159/000553587")
+        assert any(h["relation"] == "IsSupplementTo" for h in hits)
+    finally:
+        await d.aclose()
+
+
+@pytest.mark.network
+async def test_b2find_live_finds_pangaea_doi():
+    d = Datasets()
+    try:
+        hits = await d.b2find("10.1594/pangaea.867908")
+        assert any((h["doi"] or "").lower() == "10.1594/pangaea.867908" for h in hits)
+    finally:
+        await d.aclose()
+
+
+@pytest.mark.network
+async def test_openaire_by_orcid_live():
+    d = Datasets()
+    try:
+        hits = await d.openaire_by_orcid("0000-0003-1419-2405")
+        assert len(hits) > 5
+        assert any(h["doi"] for h in hits)
+    finally:
+        await d.aclose()
