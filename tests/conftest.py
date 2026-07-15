@@ -4,10 +4,12 @@ import httpx
 import pytest
 
 from fixtures_cone import cone_handler
+from fixtures_datasets import datasets_handler
 from fixtures_enrich import enrich_handler
 from fixtures_pure import mock_transport, pure_handler
 from pure_mpg_mcp.client import PureClient
 from pure_mpg_mcp.cone import ConeClient
+from pure_mpg_mcp.datasets import Datasets
 from pure_mpg_mcp.enrichment import Enrichment
 
 
@@ -46,3 +48,12 @@ async def enrich(monkeypatch) -> Enrichment:
     e._client = httpx.AsyncClient(transport=httpx.MockTransport(enrich_handler))
     yield e
     await e.aclose()
+
+
+@pytest.fixture
+async def datasets() -> Datasets:
+    """A Datasets client wired to an in-memory httpx.MockTransport (see fixtures_datasets.py)."""
+    d = Datasets()
+    d._client = httpx.AsyncClient(transport=httpx.MockTransport(datasets_handler))
+    yield d
+    await d.aclose()
